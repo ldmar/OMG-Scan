@@ -185,6 +185,37 @@
     padding:6px 14px;border-radius:999px;white-space:nowrap;z-index:4;pointer-events:none
   }
 
+  /* Rotación — botones flotantes */
+  .crop-floating-tools{
+    position:absolute;
+    right:16px;
+    top:calc(env(safe-area-inset-top) + 62px);
+    display:flex;flex-direction:column;gap:10px;z-index:6
+  }
+  .crop-tool{
+    width:46px;height:46px;border-radius:50%;
+    background:rgba(0,0,0,.55);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    border:1px solid var(--stroke);
+    display:flex;align-items:center;justify-content:center;
+    transition:transform .12s
+  }
+  .crop-tool:active{transform:scale(.9)}
+  .crop-tool svg{
+    width:22px;height:22px;stroke:var(--paper);fill:none;
+    stroke-width:2;stroke-linecap:round;stroke-linejoin:round
+  }
+  .crop-tool.rotate-flip svg{transform:scaleX(-1)}
+  .crop-tool .angle-badge{
+    position:absolute;
+    background:var(--laser);color:var(--ink);
+    font-size:10px;font-weight:800;
+    padding:2px 6px;border-radius:999px;
+    transform:translate(22px,-22px);
+    min-width:18px;text-align:center;
+    display:none
+  }
+  .crop-tool .angle-badge.show{display:block}
+
   /* ============ FILTERS ============ */
   #filters{background:var(--ink)}
   .filters-stage{
@@ -375,7 +406,6 @@
   .modal-row .btn{flex:1;justify-content:center}
   .modal p{margin:0;color:var(--muted);font-size:14px}
 
-  /* Action sheet */
   .sheet-backdrop{
     position:fixed;inset:0;background:rgba(0,0,0,.65);
     backdrop-filter:blur(6px);z-index:950;
@@ -413,7 +443,6 @@
   }
   .sheet-cancel:active{transform:scale(.98)}
 
-  /* OCR overlay */
   .ocr-overlay{
     position:fixed;inset:0;background:rgba(11,11,18,.92);
     backdrop-filter:blur(10px);z-index:960;
@@ -486,7 +515,7 @@
     margin-top:2px;line-height:1.4
   }
 
-  /* Preload chip (silencioso, en Home) */
+  /* Preload chip */
   .preload-chip{
     position:absolute;top:calc(env(safe-area-inset-top) + 12px);left:16px;
     background:rgba(255,255,255,.05);border:1px solid var(--stroke);
@@ -499,19 +528,23 @@
     background:rgba(200,255,46,.1);border-color:rgba(200,255,46,.35);
     color:var(--laser)
   }
+  .preload-chip.error{
+    background:rgba(255,90,95,.12);border-color:rgba(255,90,95,.4);
+    color:#ffb1b3
+  }
   .preload-chip .mini-spin{
     width:10px;height:10px;border-radius:50%;
     border:2px solid rgba(255,255,255,.15);border-top-color:var(--laser);
     animation:spin .8s linear infinite;flex:0 0 auto
   }
-  .preload-chip.done .mini-spin{display:none}
+  .preload-chip.done .mini-spin,
+  .preload-chip.error .mini-spin{display:none}
   .preload-chip .txt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .preload-chip .pct{
     font-family:ui-monospace,monospace;font-variant-numeric:tabular-nums;
     color:var(--paper);flex:0 0 auto
   }
 
-  /* Toasts */
   .toast{
     position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 100px);
     transform:translateX(-50%) translateY(20px);
@@ -569,7 +602,7 @@
       <span class="count" id="libCount" style="display:none">0</span>
     </button>
 
-    <div class="hint">by Ohmygoch · v1.2.1</div>
+    <div class="hint">by Ohmygoch · v1.2.2</div>
   </section>
 
   <!-- ============== CAMERA ============== -->
@@ -622,6 +655,20 @@
       <button class="chip" id="cropCancel">← Atrás</button>
       <div class="title">Ajustar bordes</div>
       <button class="chip" id="cropReset">Reset</button>
+    </div>
+    <div class="crop-floating-tools">
+      <button class="crop-tool rotate-flip" id="cropRotateL" aria-label="Rotar a la izquierda">
+        <svg viewBox="0 0 24 24">
+          <polyline points="1 4 1 10 7 10"/>
+          <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+        </svg>
+      </button>
+      <button class="crop-tool" id="cropRotateR" aria-label="Rotar a la derecha">
+        <svg viewBox="0 0 24 24">
+          <polyline points="23 4 23 10 17 10"/>
+          <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+        </svg>
+      </button>
     </div>
     <div class="crop-stage" id="cropStage">
       <div class="crop-wrap" id="cropWrap">
@@ -734,7 +781,6 @@
 
 </div>
 
-<!-- ============== MODAL: Renombrar ============== -->
 <div class="modal-backdrop" id="modalRename">
   <div class="modal">
     <h3>Renombrar documento</h3>
@@ -746,7 +792,6 @@
   </div>
 </div>
 
-<!-- ============== MODAL: Confirmar borrar ============== -->
 <div class="modal-backdrop" id="modalDelete">
   <div class="modal">
     <h3>¿Borrar documento?</h3>
@@ -758,7 +803,6 @@
   </div>
 </div>
 
-<!-- ============== MODAL: Instalar en iOS ============== -->
 <div class="modal-backdrop" id="modalInstallIos">
   <div class="modal">
     <h3>Instalar OMG Scan</h3>
@@ -774,7 +818,6 @@
   </div>
 </div>
 
-<!-- ============== ACTION SHEET ============== -->
 <div class="sheet-backdrop" id="sheetBackdrop">
   <div class="sheet" id="sheet">
     <div class="sheet-title" id="sheetTitle">Opciones</div>
@@ -783,7 +826,6 @@
   </div>
 </div>
 
-<!-- ============== OCR OVERLAY ============== -->
 <div class="ocr-overlay" id="ocrOverlay">
   <div class="ocr-ring" id="ocrRing"></div>
   <div class="ocr-title" id="ocrTitle">Extrayendo texto…</div>
@@ -797,7 +839,6 @@
   </div>
 </div>
 
-<!-- ============== HEAVY DOWNLOAD OVERLAY ============== -->
 <div class="lib-overlay" id="libOverlay">
   <div class="lib-card-dl">
     <div class="lib-icon" id="libIcon">⚙️</div>
@@ -872,10 +913,10 @@
   function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
 
   // ============================================================
-  // LibraryLoader — descarga con progreso visible + cache + abort
+  // LibraryLoader — fetch con progreso + fallback a <script> tag
   // ============================================================
   const LibraryLoader = (() => {
-    const cache = new Map(); // url -> { promise, controller, blobUrl, subscribers:Set }
+    const cache = new Map();
 
     function fmtBytes(n) {
       if (!n || n < 0) return "?";
@@ -921,13 +962,13 @@
       return new Blob(chunks, { type: "application/javascript" });
     }
 
-    async function injectScript(blobUrl) {
+    async function injectScript(src) {
       return new Promise((resolve, reject) => {
         const s = document.createElement("script");
-        s.src = blobUrl;
+        s.src = src;
         s.async = true;
         s.onload = () => resolve();
-        s.onerror = () => reject(new Error("Error al inyectar script"));
+        s.onerror = () => reject(new Error("Error al cargar script"));
         document.head.appendChild(s);
       });
     }
@@ -951,16 +992,25 @@
       entry.promise = (async () => {
         try {
           emit(entry, { phase: "download", name, loaded: 0, total: 0, percent: 0 });
-          const blob = await fetchWithProgress(url, entry.controller.signal, (p) => {
-            emit(entry, { phase: "download", name, ...p });
-          });
 
-          entry.blobUrl = URL.createObjectURL(blob);
-          emit(entry, { phase: "injecting", name, percent: 1 });
+          let usedFallback = false;
+          try {
+            const blob = await fetchWithProgress(url, entry.controller.signal, (p) => {
+              emit(entry, { phase: "download", name, ...p });
+            });
+            entry.blobUrl = URL.createObjectURL(blob);
+            emit(entry, { phase: "injecting", name, percent: 1 });
+            await injectScript(entry.blobUrl);
+          } catch (fetchErr) {
+            if (fetchErr.name === "AbortError") throw fetchErr;
+            console.warn("[LibraryLoader] fetch falló (" + fetchErr.message + "), usando <script> directo");
+            usedFallback = true;
+            emit(entry, { phase: "fallback", name });
+            await injectScript(url);
+          }
 
-          await injectScript(entry.blobUrl);
-          emit(entry, { phase: "ready", name, percent: 1 });
-          return entry.blobUrl;
+          emit(entry, { phase: "ready", name, percent: 1, usedFallback });
+          return usedFallback ? url : entry.blobUrl;
         } catch (err) {
           emit(entry, { phase: "error", name, error: err });
           cache.delete(url);
@@ -1078,6 +1128,7 @@
     stream: null, facing: "environment",
     torchOn: false, torchSupported: false,
     rawCapture: null,
+    rotation: 0,
     crop: { x1: 0.06, y1: 0.06, x2: 0.94, y2: 0.94, zoom: 1, panX: 0, panY: 0 },
     cropped: null,
     currentFilter: "auto",
@@ -1195,12 +1246,13 @@
     c.width = w; c.height = h;
     c.getContext("2d").drawImage(video, 0, 0, w, h);
     state.rawCapture = c.toDataURL("image/jpeg", 0.92);
+    state.rotation = 0;
     stopCamera();
     openCrop();
   }
 
   /* =========================================================
-     CROP — con pinch-zoom y auto-detección
+     CROP — con pinch-zoom, rotación y auto-detección
      ========================================================= */
   const cropImg = $("#cropImg");
   const cropWrap = $("#cropWrap");
@@ -1210,6 +1262,7 @@
 
   function openCrop() {
     cropImg.src = state.rawCapture;
+    state.rotation = 0;
     state.crop = { x1: 0.06, y1: 0.06, x2: 0.94, y2: 0.94, zoom: 1, panX: 0, panY: 0 };
     applyCropTransform();
     cropImg.onload = () => requestAnimationFrame(() => {
@@ -1243,6 +1296,48 @@
     cropHint.textContent = zoom > 1.05
       ? `Zoom ${zoom.toFixed(1)}× · arrastrá para mover`
       : "Pellizcá para zoom · arrastrá las esquinas";
+  }
+
+  // Rotación — rota el rawCapture y resetea el crop
+  function rotateImageDataURL(dataURL, degrees) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const w = img.naturalWidth, h = img.naturalHeight;
+        const rad = (degrees * Math.PI) / 180;
+        const cos = Math.abs(Math.cos(rad));
+        const sin = Math.abs(Math.sin(rad));
+        const nw = Math.round(w * cos + h * sin);
+        const nh = Math.round(w * sin + h * cos);
+        const c = document.createElement("canvas");
+        c.width = nw; c.height = nh;
+        const ctx = c.getContext("2d");
+        ctx.translate(nw / 2, nh / 2);
+        ctx.rotate(rad);
+        ctx.drawImage(img, -w / 2, -h / 2);
+        resolve(c.toDataURL("image/jpeg", 0.92));
+      };
+      img.onerror = () => resolve(dataURL);
+      img.src = dataURL;
+    });
+  }
+
+  async function rotateCrop(degrees) {
+    if (!state.rawCapture) return;
+    cropImg.style.opacity = "0.4";
+    const newData = await rotateImageDataURL(state.rawCapture, degrees);
+    state.rawCapture = newData;
+    state.rotation = ((state.rotation + degrees) % 360 + 360) % 360;
+    state.crop = { x1: 0.06, y1: 0.06, x2: 0.94, y2: 0.94, zoom: 1, panX: 0, panY: 0 };
+    applyCropTransform();
+    cropImg.onload = () => {
+      cropImg.style.opacity = "1";
+      requestAnimationFrame(() => {
+        layoutHandles(); drawCropRect();
+      });
+    };
+    cropImg.src = state.rawCapture;
+    buzz(12);
   }
 
   const activePointers = new Map();
@@ -1314,7 +1409,7 @@
   cropStage.addEventListener("pointercancel", endPointer);
 
   // ============================================================
-  // OpenCV — carga con progreso + precarga silenciosa
+  // OpenCV — carga con progreso + fallback + preload honesto
   // ============================================================
   const OPENCV_URL = "https://docs.opencv.org/4.8.0/opencv.js";
   let opencvPromise = null;
@@ -1333,19 +1428,35 @@
   const preloadPct = $("#preloadPct");
 
   let currentLibURL = null;
+  // 0..1 = progreso, 1 = completo, 'error' = falló
   let preloadState = { opencv: 0, tesseract: 0 };
 
   function updatePreloadChip() {
     const vals = Object.values(preloadState);
     if (!vals.length) return;
-    const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
-    const allDone = vals.every((v) => v >= 1);
+    const numericVals = vals.map((v) => typeof v === "number" ? v : 0);
+    const avg = numericVals.reduce((a, b) => a + b, 0) / numericVals.length;
+    const allDone = vals.every((v) => v === 1);
+    const anyError = vals.some((v) => v === "error");
+
     preloadChip.classList.add("show");
+    preloadChip.classList.remove("error", "done");
+
+    if (anyError && !allDone) {
+      preloadChip.classList.add("error");
+      preloadTxt.textContent = "Algunas funciones fallaron";
+      preloadPct.textContent = "⚠";
+      clearTimeout(preloadChip._hideTimer);
+      preloadChip._hideTimer = setTimeout(() => preloadChip.classList.remove("show"), 5000);
+      return;
+    }
+
     if (allDone) {
       preloadChip.classList.add("done");
       preloadTxt.textContent = "Funciones listas";
       preloadPct.textContent = "✓";
-      setTimeout(() => preloadChip.classList.remove("show"), 2200);
+      clearTimeout(preloadChip._hideTimer);
+      preloadChip._hideTimer = setTimeout(() => preloadChip.classList.remove("show"), 2200);
     } else {
       preloadTxt.textContent = "Preparando funciones…";
       preloadPct.textContent = Math.round(avg * 100) + "%";
@@ -1373,16 +1484,23 @@
   });
 
   function handleProgress(state, { silent = false, label = "", icon = "⚙️" } = {}) {
+    const key = label.includes("OCR") ? "tesseract" : "opencv";
+
     if (state.phase === "download") {
-      const key = label.includes("OCR") ? "tesseract" : "opencv";
       preloadState[key] = state.total ? state.percent : 0;
       updatePreloadChip();
-    }
-    if (state.phase === "ready") {
-      const key = label.includes("OCR") ? "tesseract" : "opencv";
+    } else if (state.phase === "fallback") {
+      // Fetch falló: no sabemos el progreso real, estimamos
+      preloadState[key] = Math.max(preloadState[key] || 0, 0.1);
+      updatePreloadChip();
+    } else if (state.phase === "ready") {
       preloadState[key] = 1;
       updatePreloadChip();
+    } else if (state.phase === "error") {
+      preloadState[key] = "error";
+      updatePreloadChip();
     }
+
     if (silent) return;
 
     if (state.phase === "download") {
@@ -1398,6 +1516,14 @@
         percent: state.total ? state.percent : 0.1,
         meta,
         note: "Solo la primera vez. Después queda cacheado y es instantáneo.",
+      });
+    } else if (state.phase === "fallback") {
+      showLibOverlay({
+        icon, name: label,
+        status: "Descargando (progreso no disponible)…",
+        percent: 0.5,
+        meta: "El servidor no permite medir el progreso",
+        note: "Puede tardar unos segundos. Solo la primera vez.",
       });
     } else if (state.phase === "injecting") {
       showLibOverlay({
@@ -1458,10 +1584,12 @@
   async function preloadOpenCV() {
     try {
       await ensureOpenCV({ silent: true });
-    } catch (e) {
       preloadState.opencv = 1;
-      updatePreloadChip();
+    } catch (e) {
+      console.warn("[preload] OpenCV falló:", e.message);
+      preloadState.opencv = "error";
     }
+    updatePreloadChip();
   }
 
   async function autoDetectEdges() {
@@ -2097,10 +2225,12 @@
   async function preloadTesseract() {
     try {
       await ensureTesseract({ silent: true });
-    } catch (_) {
       preloadState.tesseract = 1;
-      updatePreloadChip();
+    } catch (e) {
+      console.warn("[preload] Tesseract falló:", e.message);
+      preloadState.tesseract = "error";
     }
+    updatePreloadChip();
   }
 
   async function runOCR(dataURLs, docName = "") {
@@ -2479,7 +2609,12 @@
     const f = e.target.files && e.target.files[0];
     if (!f) return;
     const r = new FileReader();
-    r.onload = () => { state.rawCapture = r.result; stopCamera(); openCrop(); };
+    r.onload = () => {
+      state.rawCapture = r.result;
+      state.rotation = 0;
+      stopCamera();
+      openCrop();
+    };
     r.readAsDataURL(f);
     e.target.value = "";
   });
@@ -2498,6 +2633,8 @@
     state.crop = { x1: 0.06, y1: 0.06, x2: 0.94, y2: 0.94, zoom: 1, panX: 0, panY: 0 };
     layoutHandles(); drawCropRect(); applyCropTransform();
   });
+  $("#cropRotateL").addEventListener("click", () => rotateCrop(-90));
+  $("#cropRotateR").addEventListener("click", () => rotateCrop(90));
   $("#cropAuto").addEventListener("click", autoDetectEdges);
   $("#cropNext").addEventListener("click", goToFilters);
 

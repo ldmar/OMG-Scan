@@ -1,6 +1,6 @@
-/* OMG Scan · Service Worker v1.2.1 */
+/* OMG Scan · Service Worker v1.2.2 */
 
-const VERSION       = 'v1.2.1';
+const VERSION       = 'v1.2.2';
 const SHELL_CACHE   = `omgscan-shell-${VERSION}`;
 const RUNTIME_CACHE = `omgscan-runtime-${VERSION}`;
 
@@ -71,9 +71,13 @@ self.addEventListener('fetch', (event) => {
       caches.match(req).then((cached) => {
         if (cached) return cached;
         return fetch(req).then((res) => {
-          if (!res || res.status !== 200 || res.type === 'opaque') return res;
-          const copy = res.clone();
-          caches.open(RUNTIME_CACHE).then((c) => c.put(req, copy)).catch(() => {});
+          if (!res) return res;
+          // Cachear tanto 200 normales como opaque (status 0, no-cors)
+          const canCache = res.status === 200 || res.type === 'opaque';
+          if (canCache) {
+            const copy = res.clone();
+            caches.open(RUNTIME_CACHE).then((c) => c.put(req, copy)).catch(() => {});
+          }
           return res;
         });
       })
