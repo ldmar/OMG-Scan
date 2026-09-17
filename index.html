@@ -148,7 +148,7 @@
     transform-origin:center center;transition:transform .12s ease-out;
     will-change:transform
   }
-  .crop-wrap img{display:block;max-width:100%;max-height:100%;border-radius:6px;pointer-events:none}
+  .crop-wrap img{display:block;max-width:100%;max-height:100%;border-radius:6px;pointer-events:none;transition:opacity .15s}
   .crop-rect{position:absolute;border:2px solid var(--laser);
     box-shadow:0 0 24px rgba(200,255,46,.35),0 0 0 1px rgba(0,0,0,.35);
     pointer-events:none;border-radius:4px}
@@ -205,16 +205,6 @@
     stroke-width:2;stroke-linecap:round;stroke-linejoin:round
   }
   .crop-tool.rotate-flip svg{transform:scaleX(-1)}
-  .crop-tool .angle-badge{
-    position:absolute;
-    background:var(--laser);color:var(--ink);
-    font-size:10px;font-weight:800;
-    padding:2px 6px;border-radius:999px;
-    transform:translate(22px,-22px);
-    min-width:18px;text-align:center;
-    display:none
-  }
-  .crop-tool .angle-badge.show{display:block}
 
   /* ============ FILTERS ============ */
   #filters{background:var(--ink)}
@@ -515,7 +505,7 @@
     margin-top:2px;line-height:1.4
   }
 
-  /* Preload chip */
+  /* Preload chip (solo Tesseract ahora) */
   .preload-chip{
     position:absolute;top:calc(env(safe-area-inset-top) + 12px);left:16px;
     background:rgba(255,255,255,.05);border:1px solid var(--stroke);
@@ -565,7 +555,7 @@
     <button class="install-chip" id="btnInstall">⬇ Instalar app</button>
     <button class="preload-chip" id="preloadChip">
       <span class="mini-spin"></span>
-      <span class="txt" id="preloadTxt">Preparando funciones…</span>
+      <span class="txt" id="preloadTxt">Preparando OCR…</span>
       <span class="pct" id="preloadPct">0%</span>
     </button>
     <div class="logo-lockup">
@@ -602,7 +592,7 @@
       <span class="count" id="libCount" style="display:none">0</span>
     </button>
 
-    <div class="hint">by Ohmygoch · v1.2.2</div>
+    <div class="hint">by Ohmygoch · v1.2.3</div>
   </section>
 
   <!-- ============== CAMERA ============== -->
@@ -913,7 +903,7 @@
   function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
 
   // ============================================================
-  // LibraryLoader — fetch con progreso + fallback a <script> tag
+  // LibraryLoader
   // ============================================================
   const LibraryLoader = (() => {
     const cache = new Map();
@@ -930,7 +920,6 @@
       if (sec < 60) return Math.round(sec) + "s";
       return Math.round(sec / 60) + "min";
     }
-
     function emit(entry, state) {
       for (const fn of entry.subscribers) {
         try { fn(state); } catch (_) {}
@@ -953,11 +942,7 @@
         const elapsed = (performance.now() - t0) / 1000;
         const speed = loaded / Math.max(0.1, elapsed);
         const eta = total > 0 ? (total - loaded) / Math.max(1, speed) : -1;
-        onProgress({
-          loaded, total,
-          percent: total ? loaded / total : 0,
-          speed, eta,
-        });
+        onProgress({ loaded, total, percent: total ? loaded / total : 0, speed, eta });
       }
       return new Blob(chunks, { type: "application/javascript" });
     }
@@ -965,8 +950,7 @@
     async function injectScript(src) {
       return new Promise((resolve, reject) => {
         const s = document.createElement("script");
-        s.src = src;
-        s.async = true;
+        s.src = src; s.async = true;
         s.onload = () => resolve();
         s.onerror = () => reject(new Error("Error al cargar script"));
         document.head.appendChild(s);
@@ -979,7 +963,6 @@
         if (onProgress) entry.subscribers.add(onProgress);
         return { promise: entry.promise, entry };
       }
-
       const entry = {
         subscribers: new Set(),
         controller: new AbortController(),
@@ -992,7 +975,6 @@
       entry.promise = (async () => {
         try {
           emit(entry, { phase: "download", name, loaded: 0, total: 0, percent: 0 });
-
           let usedFallback = false;
           try {
             const blob = await fetchWithProgress(url, entry.controller.signal, (p) => {
@@ -1003,12 +985,11 @@
             await injectScript(entry.blobUrl);
           } catch (fetchErr) {
             if (fetchErr.name === "AbortError") throw fetchErr;
-            console.warn("[LibraryLoader] fetch falló (" + fetchErr.message + "), usando <script> directo");
+            console.warn("[LibraryLoader] fetch falló, usando <script> directo:", fetchErr.message);
             usedFallback = true;
             emit(entry, { phase: "fallback", name });
             await injectScript(url);
           }
-
           emit(entry, { phase: "ready", name, percent: 1, usedFallback });
           return usedFallback ? url : entry.blobUrl;
         } catch (err) {
@@ -1017,7 +998,6 @@
           throw err;
         }
       })();
-
       return { promise: entry.promise, entry };
     }
 
@@ -1028,13 +1008,10 @@
         emit(entry, { phase: "cancelled" });
       }
     }
-
     function isReady(url) {
       const entry = cache.get(url);
-      if (!entry) return false;
-      return !!entry.blobUrl;
+      return !!(entry && entry.blobUrl);
     }
-
     return { load, abort, isReady, fmtBytes, fmtTime };
   })();
 
@@ -1135,12 +1112,8 @@
     pages: [],
     qualityTimer: null,
     brush: {
-      enabled: false,
-      size: 70,
-      strength: 60,
-      strokes: [],
-      mask: null,
-      w: 0, h: 0,
+      enabled: false, size: 70, strength: 60,
+      strokes: [], mask: null, w: 0, h: 0,
     },
     preFilterCanvas: null,
     renderedCanvas: null,
@@ -1252,7 +1225,7 @@
   }
 
   /* =========================================================
-     CROP — con pinch-zoom, rotación y auto-detección
+     CROP
      ========================================================= */
   const cropImg = $("#cropImg");
   const cropWrap = $("#cropWrap");
@@ -1261,6 +1234,7 @@
   const cropHint = $("#cropHint");
 
   function openCrop() {
+    cropImg.style.opacity = "1";
     cropImg.src = state.rawCapture;
     state.rotation = 0;
     state.crop = { x1: 0.06, y1: 0.06, x2: 0.94, y2: 0.94, zoom: 1, panX: 0, panY: 0 };
@@ -1298,7 +1272,6 @@
       : "Pellizcá para zoom · arrastrá las esquinas";
   }
 
-  // Rotación — rota el rawCapture y resetea el crop
   function rotateImageDataURL(dataURL, degrees) {
     return new Promise((resolve) => {
       const img = new Image();
@@ -1324,7 +1297,7 @@
 
   async function rotateCrop(degrees) {
     if (!state.rawCapture) return;
-    cropImg.style.opacity = "0.4";
+    cropImg.style.opacity = "0.35";
     const newData = await rotateImageDataURL(state.rawCapture, degrees);
     state.rawCapture = newData;
     state.rotation = ((state.rotation + degrees) % 360 + 360) % 360;
@@ -1345,14 +1318,9 @@
 
   cropStage.addEventListener("pointerdown", (e) => {
     activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-
     if (activePointers.size === 2) {
       const [a, b] = [...activePointers.values()];
-      gesture = {
-        mode: "pinch",
-        initialDist: dist(a, b),
-        initialZoom: state.crop.zoom,
-      };
+      gesture = { mode: "pinch", initialDist: dist(a, b), initialZoom: state.crop.zoom };
       return;
     }
     if (activePointers.size === 1) {
@@ -1408,13 +1376,9 @@
   cropStage.addEventListener("pointerup", endPointer);
   cropStage.addEventListener("pointercancel", endPointer);
 
-  // ============================================================
-  // OpenCV — carga con progreso + fallback + preload honesto
-  // ============================================================
-  const OPENCV_URL = "https://docs.opencv.org/4.8.0/opencv.js";
-  let opencvPromise = null;
-  let opencvReady = false;
-
+  /* =========================================================
+     OVERLAY DE DESCARGA (heavy libs)
+     ========================================================= */
   const libOverlay = $("#libOverlay");
   const libIcon = $("#libIcon");
   const libNameEl = $("#libName");
@@ -1428,8 +1392,8 @@
   const preloadPct = $("#preloadPct");
 
   let currentLibURL = null;
-  // 0..1 = progreso, 1 = completo, 'error' = falló
-  let preloadState = { opencv: 0, tesseract: 0 };
+  // Solo trackeamos Tesseract ahora (OpenCV no se preloadea)
+  const preloadState = { tesseract: 0 };
 
   function updatePreloadChip() {
     const vals = Object.values(preloadState);
@@ -1444,21 +1408,20 @@
 
     if (anyError && !allDone) {
       preloadChip.classList.add("error");
-      preloadTxt.textContent = "Algunas funciones fallaron";
+      preloadTxt.textContent = "OCR no disponible";
       preloadPct.textContent = "⚠";
       clearTimeout(preloadChip._hideTimer);
       preloadChip._hideTimer = setTimeout(() => preloadChip.classList.remove("show"), 5000);
       return;
     }
-
     if (allDone) {
       preloadChip.classList.add("done");
-      preloadTxt.textContent = "Funciones listas";
+      preloadTxt.textContent = "OCR listo";
       preloadPct.textContent = "✓";
       clearTimeout(preloadChip._hideTimer);
       preloadChip._hideTimer = setTimeout(() => preloadChip.classList.remove("show"), 2200);
     } else {
-      preloadTxt.textContent = "Preparando funciones…";
+      preloadTxt.textContent = "Preparando OCR…";
       preloadPct.textContent = Math.round(avg * 100) + "%";
     }
   }
@@ -1483,22 +1446,21 @@
     hideLibOverlay();
   });
 
-  function handleProgress(state, { silent = false, label = "", icon = "⚙️" } = {}) {
-    const key = label.includes("OCR") ? "tesseract" : "opencv";
-
-    if (state.phase === "download") {
-      preloadState[key] = state.total ? state.percent : 0;
-      updatePreloadChip();
-    } else if (state.phase === "fallback") {
-      // Fetch falló: no sabemos el progreso real, estimamos
-      preloadState[key] = Math.max(preloadState[key] || 0, 0.1);
-      updatePreloadChip();
-    } else if (state.phase === "ready") {
-      preloadState[key] = 1;
-      updatePreloadChip();
-    } else if (state.phase === "error") {
-      preloadState[key] = "error";
-      updatePreloadChip();
+  function handleProgress(state, { silent = false, label = "", icon = "⚙️", trackPreload = null } = {}) {
+    if (trackPreload && preloadState[trackPreload] !== undefined) {
+      if (state.phase === "download") {
+        preloadState[trackPreload] = state.total ? state.percent : 0;
+        updatePreloadChip();
+      } else if (state.phase === "fallback") {
+        preloadState[trackPreload] = Math.max(preloadState[trackPreload] || 0, 0.1);
+        updatePreloadChip();
+      } else if (state.phase === "ready") {
+        preloadState[trackPreload] = 1;
+        updatePreloadChip();
+      } else if (state.phase === "error") {
+        preloadState[trackPreload] = "error";
+        updatePreloadChip();
+      }
     }
 
     if (silent) return;
@@ -1515,7 +1477,7 @@
         status: "Descargando…",
         percent: state.total ? state.percent : 0.1,
         meta,
-        note: "Solo la primera vez. Después queda cacheado y es instantáneo.",
+        note: "Solo la primera vez. Después queda cacheado.",
       });
     } else if (state.phase === "fallback") {
       showLibOverlay({
@@ -1525,13 +1487,13 @@
         meta: "El servidor no permite medir el progreso",
         note: "Puede tardar unos segundos. Solo la primera vez.",
       });
-    } else if (state.phase === "injecting") {
+    } else if (state.phase === "compiling") {
       showLibOverlay({
         icon, name: label,
         status: "Inicializando motor…",
         percent: 0.95,
-        meta: "Compilando WASM (puede tardar 1-2s)",
-        note: "",
+        meta: "Compilando WASM (2-4 segundos)",
+        note: "El dispositivo puede sentirse lento un momento. Es normal.",
       });
     } else if (state.phase === "ready") {
       showLibOverlay({
@@ -1544,52 +1506,84 @@
     }
   }
 
-  function ensureOpenCV({ silent = false } = {}) {
-    if (opencvPromise) return opencvPromise;
-    currentLibURL = OPENCV_URL;
-    const { promise } = LibraryLoader.load(OPENCV_URL, {
-      name: "Detector de bordes",
-      onProgress: (state) => {
-        handleProgress(state, {
-          silent,
-          label: "Detector de bordes",
-          icon: "✨",
-        });
-      },
-    });
+  /* =========================================================
+     OPENCV — carga SOLO bajo demanda (no preload)
+     ========================================================= */
+  const OPENCV_URL = "https://docs.opencv.org/4.8.0/opencv.js";
+  let opencvPromise = null;
+  let opencvReady = false;
 
-    opencvPromise = promise.then(() => new Promise((resolve, reject) => {
+  async function ensureOpenCV({ silent = false } = {}) {
+    if (opencvPromise) return opencvPromise;
+
+    opencvPromise = (async () => {
+      currentLibURL = OPENCV_URL;
+
+      // 1) Mostrar overlay inicial antes de bloquear
+      if (!silent) {
+        showLibOverlay({
+          icon: "✨",
+          name: "Detector de bordes",
+          status: "Conectando…",
+          percent: 0.02,
+          meta: "",
+          note: "Solo la primera vez. Después queda cacheado.",
+        });
+        // Dejar que el browser pinte el overlay antes del bloqueo
+        await new Promise((r) => setTimeout(r, 60));
+      }
+
+      // 2) Cargar el script (progreso real vía handleProgress)
+      const { promise } = LibraryLoader.load(OPENCV_URL, {
+        name: "Detector de bordes",
+        onProgress: (state) => {
+          // El "ready" de LibraryLoader significa "script tag cargado", NO "WASM listo"
+          const phaseOverride = state.phase === "ready" ? "compiling" : state.phase;
+          handleProgress(
+            { ...state, phase: phaseOverride },
+            { silent, label: "Detector de bordes", icon: "✨" }
+          );
+        },
+      });
+      await promise;
+
+      // 3) Esperar WASM compile / runtime init
       if (window.cv && window.cv.Mat) {
         opencvReady = true;
-        return resolve(window.cv);
+      } else {
+        await new Promise((resolve, reject) => {
+          window.cv = window.cv || {};
+          const t0 = Date.now();
+          const check = setInterval(() => {
+            if (window.cv && window.cv.Mat) {
+              clearInterval(check);
+              opencvReady = true;
+              resolve();
+            } else if (Date.now() - t0 > 60000) {
+              clearInterval(check);
+              reject(new Error("OpenCV tardó demasiado en inicializar"));
+            }
+          }, 150);
+          window.cv.onRuntimeInitialized = () => {
+            clearInterval(check);
+            opencvReady = true;
+            resolve();
+          };
+        });
       }
-      window.cv = window.cv || {};
-      const prev = window.cv.onRuntimeInitialized;
-      window.cv.onRuntimeInitialized = () => {
-        if (typeof prev === "function") prev();
-        opencvReady = true;
-        resolve(window.cv);
-      };
-      setTimeout(() => {
-        if (!opencvReady) reject(new Error("OpenCV no inicializó a tiempo"));
-      }, 30000);
-    })).catch((err) => {
-      opencvPromise = null;
-      throw err;
-    });
 
+      // 4) Listo de verdad
+      if (!silent) {
+        handleProgress(
+          { phase: "ready", name: "Detector de bordes" },
+          { silent, label: "Detector de bordes", icon: "✨" }
+        );
+      }
+      return window.cv;
+    })();
+
+    opencvPromise.catch(() => { opencvPromise = null; });
     return opencvPromise;
-  }
-
-  async function preloadOpenCV() {
-    try {
-      await ensureOpenCV({ silent: true });
-      preloadState.opencv = 1;
-    } catch (e) {
-      console.warn("[preload] OpenCV falló:", e.message);
-      preloadState.opencv = "error";
-    }
-    updatePreloadChip();
   }
 
   async function autoDetectEdges() {
@@ -1696,7 +1690,6 @@
     c.getContext("2d").drawImage(imgEl, 0, 0, w, h);
     return c;
   }
-
   function buildCroppedCanvas() {
     return new Promise((resolve) => {
       const img = new Image();
@@ -1783,13 +1776,11 @@
     const b = state.brush;
     if (b.mask) b.mask.fill(0);
   }
-
   function paintDot(cx, cy, radius, strengthPct, erase) {
     const b = state.brush;
     const w = b.w, h = b.h, mask = b.mask;
     if (!mask) return;
-    const r = radius;
-    const r2 = r * r;
+    const r = radius, r2 = r * r;
     const x0 = Math.max(0, Math.floor(cx - r));
     const x1 = Math.min(w, Math.ceil(cx + r));
     const y0 = Math.max(0, Math.floor(cy - r));
@@ -1809,7 +1800,6 @@
       }
     }
   }
-
   function applyShadowBrushToCanvas(baseCanvas) {
     const b = state.brush;
     if (!b.mask || !b.strokes.length) return baseCanvas;
@@ -1837,7 +1827,6 @@
     ctx.putImageData(img, 0, 0);
     return baseCanvas;
   }
-
   function replayStrokes() {
     const b = state.brush;
     resetMask();
@@ -1862,7 +1851,7 @@
   }
 
   /* =========================================================
-     RENDERIZADO DEL FILTRO VIEW
+     RENDER FILTERS
      ========================================================= */
   const filtersImg = $("#filtersImg");
   const brushCursor = $("#brushCursor");
@@ -1878,7 +1867,6 @@
       renderFinal();
     });
   }
-
   function renderFinal() {
     const b = state.brush;
     let out;
@@ -1891,7 +1879,6 @@
     state.renderedCanvas = out;
     filtersImg.src = out.toDataURL("image/jpeg", 0.9);
   }
-
   function renderPreviewOnly(filterId) {
     const out = applyFilterToCanvas(state.preFilterCanvas, filterId);
     if (state.brush.enabled && state.brush.mask) applyShadowBrushToCanvas(out);
@@ -1943,7 +1930,7 @@
   }
 
   /* =========================================================
-     BRUSH UI & GESTOS
+     BRUSH UI
      ========================================================= */
   const toolFilters = $("#toolFilters");
   const toolBrush = $("#toolBrush");
@@ -1959,7 +1946,6 @@
     $("#compareHint").style.opacity = on ? "0" : "";
     if (!on) brushCursor.classList.remove("show");
   }
-
   toolFilters.addEventListener("click", () => setBrushEnabled(false));
   toolBrush.addEventListener("click", () => {
     if (!state.preFilterCanvas) { showToast("Primero cargá una imagen"); return; }
@@ -1967,7 +1953,6 @@
     setBrushEnabled(true);
     showToast("Pintá sobre las sombras ✨");
   });
-
   const brushSizeInput = $("#brushSize");
   const brushStrengthInput = $("#brushStrength");
   brushSizeInput.addEventListener("input", () => {
@@ -1978,7 +1963,6 @@
     state.brush.strength = +brushStrengthInput.value;
     $("#brushStrengthVal").textContent = brushStrengthInput.value;
   });
-
   $("#brushUndo").addEventListener("click", () => {
     if (!state.brush.strokes.length) return;
     state.brush.strokes.pop();
@@ -2038,7 +2022,6 @@
     scheduleRenderFinal();
     buzz(6);
   });
-
   filtersStage.addEventListener("pointermove", (e) => {
     if (!state.brush.enabled) return;
     const wrapRect = filtersImgWrap.getBoundingClientRect();
@@ -2059,7 +2042,6 @@
     currentStroke.points.push({ x: pt.x, y: pt.y });
     scheduleRenderFinal();
   });
-
   const endPaint = (e) => {
     if (e.pointerId !== paintPointerId) return;
     if (currentStroke && currentStroke.points.length) {
@@ -2079,7 +2061,7 @@
   });
 
   /* =========================================================
-     COMPARE (press & hold) — solo si brush off
+     COMPARE
      ========================================================= */
   (function setupCompare() {
     let originalSrc = null;
@@ -2106,13 +2088,11 @@
     const canvas = await buildCroppedCanvas();
     state.preFilterCanvas = canvas;
     state.cropped = canvas.toDataURL("image/jpeg", 0.92);
-
     state.brush.mask = null;
     state.brush.strokes = [];
     state.brush.w = 0;
     state.brush.h = 0;
     ensureMask(canvas.width, canvas.height);
-
     state.currentFilter = "auto";
     setBrushEnabled(false);
     show("filters");
@@ -2121,7 +2101,7 @@
   }
 
   /* =========================================================
-     COMMIT DE PÁGINA
+     COMMIT + PDF + SHARE
      ========================================================= */
   function commitCurrentPage() {
     return new Promise((resolve) => {
@@ -2137,10 +2117,6 @@
     if (n > 0) { badge.style.display = ""; badge.textContent = n; }
     else badge.style.display = "none";
   }
-
-  /* =========================================================
-     PDF / SHARE
-     ========================================================= */
   async function makePDFFromPages(pages) {
     if (!pages.length) throw new Error("Sin páginas");
     if (!window.PDFLib) throw new Error("pdf-lib aún cargando…");
@@ -2186,7 +2162,7 @@
   }
 
   /* =========================================================
-     OCR — tesseract.js
+     OCR
      ========================================================= */
   const ocrOverlay = $("#ocrOverlay");
   const ocrTitle = $("#ocrTitle");
@@ -2199,7 +2175,7 @@
   const TESSERACT_URL = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
   let tesseractPromise = null;
 
-  function ensureTesseract({ silent = false } = {}) {
+  function ensureTesseract({ silent = false, trackPreload = null } = {}) {
     if (tesseractPromise) return tesseractPromise;
     currentLibURL = TESSERACT_URL;
     const { promise } = LibraryLoader.load(TESSERACT_URL, {
@@ -2209,6 +2185,7 @@
           silent,
           label: "Motor OCR",
           icon: "📝",
+          trackPreload,
         });
       },
     });
@@ -2224,7 +2201,7 @@
 
   async function preloadTesseract() {
     try {
-      await ensureTesseract({ silent: true });
+      await ensureTesseract({ silent: true, trackPreload: "tesseract" });
       preloadState.tesseract = 1;
     } catch (e) {
       console.warn("[preload] Tesseract falló:", e.message);
@@ -2310,8 +2287,7 @@
     const text = ocrText.value;
     if (!text) return;
     if (navigator.share) {
-      try { await navigator.share({ title: "OMG Scan · OCR", text }); }
-      catch (_) {}
+      try { await navigator.share({ title: "OMG Scan · OCR", text }); } catch (_) {}
     } else {
       try { await navigator.clipboard.writeText(text); showToast("Texto copiado ✓"); } catch (_) {}
     }
@@ -2370,7 +2346,6 @@
       grid.appendChild(card);
     });
   }
-
   async function makeThumbnail(dataURL, maxW = 320) {
     return new Promise((resolve) => {
       const img = new Image();
@@ -2386,7 +2361,6 @@
       img.src = dataURL;
     });
   }
-
   async function saveCurrentToLibrary() {
     if (!state.pages.length) { showToast("No hay páginas para guardar"); return; }
     try {
@@ -2467,56 +2441,36 @@
   function docActionsMenu() {
     if (!state.currentDocId) return;
     openSheet("Opciones del documento", [
-      {
-        icon: "📤", label: "Compartir PDF",
-        action: async () => {
-          const doc = await dbGet(state.currentDocId);
-          if (!doc) return;
-          showToast("Preparando PDF…");
-          const bytes = await makePDFFromPages(doc.pages);
-          const safe = doc.name.replace(/[^a-z0-9\-_ ]/gi, "").trim() || "OMG-Scan";
-          const r = await sharePDF(bytes, `${safe}.pdf`);
-          if (r === false) {
-            downloadPDF(bytes, `${safe}.pdf`);
-            showToast("PDF descargado (compartir no disponible)");
-          }
-        },
-      },
-      {
-        icon: "⬇", label: "Descargar PDF",
-        action: async () => {
-          const doc = await dbGet(state.currentDocId);
-          if (!doc) return;
-          showToast("Generando PDF…");
-          const bytes = await makePDFFromPages(doc.pages);
-          const safe = doc.name.replace(/[^a-z0-9\-_ ]/gi, "").trim() || "OMG-Scan";
-          downloadPDF(bytes, `${safe}.pdf`);
-          showToast("PDF descargado ✓");
-        },
-      },
-      {
-        icon: "📝", label: "Extraer texto (OCR)",
-        action: async () => {
-          const doc = await dbGet(state.currentDocId);
-          if (!doc) return;
-          const urls = await Promise.all(doc.pages.map((p) => blobToDataURL(p.blob)));
-          await runOCR(urls, doc.name);
-        },
-      },
-      {
-        icon: "✏️", label: "Renombrar",
-        action: async () => {
-          const doc = await dbGet(state.currentDocId);
-          if (!doc) return;
-          $("#renameInput").value = doc.name;
-          $("#modalRename").classList.add("show");
-          setTimeout(() => $("#renameInput").focus(), 100);
-        },
-      },
-      {
-        icon: "🗑️", label: "Borrar documento", danger: true,
-        action: async () => { $("#modalDelete").classList.add("show"); },
-      },
+      { icon: "📤", label: "Compartir PDF", action: async () => {
+        const doc = await dbGet(state.currentDocId); if (!doc) return;
+        showToast("Preparando PDF…");
+        const bytes = await makePDFFromPages(doc.pages);
+        const safe = doc.name.replace(/[^a-z0-9\-_ ]/gi, "").trim() || "OMG-Scan";
+        const r = await sharePDF(bytes, `${safe}.pdf`);
+        if (r === false) { downloadPDF(bytes, `${safe}.pdf`); showToast("PDF descargado"); }
+      }},
+      { icon: "⬇", label: "Descargar PDF", action: async () => {
+        const doc = await dbGet(state.currentDocId); if (!doc) return;
+        showToast("Generando PDF…");
+        const bytes = await makePDFFromPages(doc.pages);
+        const safe = doc.name.replace(/[^a-z0-9\-_ ]/gi, "").trim() || "OMG-Scan";
+        downloadPDF(bytes, `${safe}.pdf`);
+        showToast("PDF descargado ✓");
+      }},
+      { icon: "📝", label: "Extraer texto (OCR)", action: async () => {
+        const doc = await dbGet(state.currentDocId); if (!doc) return;
+        const urls = await Promise.all(doc.pages.map((p) => blobToDataURL(p.blob)));
+        await runOCR(urls, doc.name);
+      }},
+      { icon: "✏️", label: "Renombrar", action: async () => {
+        const doc = await dbGet(state.currentDocId); if (!doc) return;
+        $("#renameInput").value = doc.name;
+        $("#modalRename").classList.add("show");
+        setTimeout(() => $("#renameInput").focus(), 100);
+      }},
+      { icon: "🗑️", label: "Borrar documento", danger: true, action: async () => {
+        $("#modalDelete").classList.add("show");
+      }},
     ]);
   }
 
@@ -2564,7 +2518,6 @@
       $("#modalInstallIos").classList.add("show");
     });
   }
-
   window.addEventListener("beforeinstallprompt", (e) => {
     e.preventDefault();
     window.__omgInstallPrompt = e;
@@ -2732,7 +2685,7 @@
     const r = await sharePDF(bytes, `${safe}.pdf`);
     if (r === false) {
       downloadPDF(bytes, `${safe}.pdf`);
-      showToast("PDF descargado (compartir no disponible)");
+      showToast("PDF descargado");
     }
   });
   $("#docOcr").addEventListener("click", async () => {
@@ -2777,7 +2730,7 @@
   }
 
   /* =========================================================
-     BOOT + PRELOAD EN BACKGROUND
+     BOOT
      ========================================================= */
   (async function boot() {
     await refreshLibraryCount();
@@ -2786,14 +2739,13 @@
     if (action === "scan") { show("camera"); await startCamera(); }
     else if (action === "library") { openLibrary(); }
 
-    const startPreload = () => {
-      preloadOpenCV();
-      setTimeout(preloadTesseract, 3500);
-    };
+    // Preload: SOLO Tesseract (corre en Web Worker, NO bloquea el hilo principal)
+    // OpenCV se carga SOLO bajo demanda (bloquea el hilo al compilar el WASM).
+    const startPreload = () => preloadTesseract();
     if ("requestIdleCallback" in window) {
-      requestIdleCallback(startPreload, { timeout: 4000 });
+      requestIdleCallback(startPreload, { timeout: 5000 });
     } else {
-      setTimeout(startPreload, 2500);
+      setTimeout(startPreload, 3000);
     }
   })();
 })();

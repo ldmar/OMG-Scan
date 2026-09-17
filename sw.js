@@ -1,6 +1,6 @@
-/* OMG Scan · Service Worker v1.2.2 */
+/* OMG Scan · Service Worker v1.2.3 */
 
-const VERSION       = 'v1.2.2';
+const VERSION       = 'v1.2.3';
 const SHELL_CACHE   = `omgscan-shell-${VERSION}`;
 const RUNTIME_CACHE = `omgscan-runtime-${VERSION}`;
 
@@ -57,7 +57,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Whitelist de CDNs (pdf-lib, OpenCV, Tesseract, fonts)
+  // Whitelist de CDNs
   const whitelisted =
     url.origin === self.location.origin ||
     url.hostname === 'cdn.jsdelivr.net' ||
@@ -72,7 +72,6 @@ self.addEventListener('fetch', (event) => {
         if (cached) return cached;
         return fetch(req).then((res) => {
           if (!res) return res;
-          // Cachear tanto 200 normales como opaque (status 0, no-cors)
           const canCache = res.status === 200 || res.type === 'opaque';
           if (canCache) {
             const copy = res.clone();
