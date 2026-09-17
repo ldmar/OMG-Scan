@@ -1,6 +1,6 @@
-/* OMG Scan · Service Worker v1.2 */
+/* OMG Scan · Service Worker v1.2.1 */
 
-const VERSION       = 'v1.2.0';
+const VERSION       = 'v1.2.1';
 const SHELL_CACHE   = `omgscan-shell-${VERSION}`;
 const RUNTIME_CACHE = `omgscan-runtime-${VERSION}`;
 
@@ -57,7 +57,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Whitelist de CDNs (librerías pesadas: OpenCV, Tesseract, jscanify, pdf-lib, fonts)
+  // Whitelist de CDNs (pdf-lib, OpenCV, Tesseract, fonts)
   const whitelisted =
     url.origin === self.location.origin ||
     url.hostname === 'cdn.jsdelivr.net' ||

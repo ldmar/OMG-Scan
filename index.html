@@ -442,6 +442,75 @@
   }
   .ocr-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
 
+  /* ============ HEAVY DOWNLOAD OVERLAY ============ */
+  .lib-overlay{
+    position:fixed;inset:0;background:rgba(11,11,18,.94);
+    backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    z-index:970;display:none;align-items:center;justify-content:center;
+    padding:24px;animation:fade .2s
+  }
+  .lib-overlay.show{display:flex}
+  .lib-card-dl{
+    background:var(--card);border:1px solid var(--stroke);
+    border-radius:24px;padding:28px 24px;width:100%;max-width:380px;
+    text-align:center;display:flex;flex-direction:column;gap:14px;align-items:center;
+    box-shadow:0 24px 80px -20px rgba(0,0,0,.7)
+  }
+  .lib-card-dl .lib-icon{
+    width:64px;height:64px;border-radius:20px;
+    background:linear-gradient(135deg,var(--violet),var(--cyan));
+    display:flex;align-items:center;justify-content:center;font-size:30px;
+    box-shadow:0 12px 40px -10px rgba(108,77,255,.7)
+  }
+  .lib-card-dl .lib-icon.spin{animation:spin 1.4s linear infinite}
+  .lib-card-dl .lib-name{font-size:18px;font-weight:700;letter-spacing:-.3px}
+  .lib-card-dl .lib-status{
+    font-size:13px;color:var(--muted);min-height:18px;
+    font-variant-numeric:tabular-nums
+  }
+  .lib-card-dl .lib-bar{
+    width:100%;height:6px;background:rgba(255,255,255,.08);
+    border-radius:3px;overflow:hidden
+  }
+  .lib-card-dl .lib-bar > i{
+    display:block;height:100%;width:0%;
+    background:linear-gradient(90deg,var(--violet),var(--cyan));
+    border-radius:3px;transition:width .25s ease
+  }
+  .lib-card-dl .lib-meta{
+    font-size:11px;color:var(--muted);font-family:ui-monospace,monospace;
+    letter-spacing:.3px
+  }
+  .lib-card-dl .lib-note{
+    font-size:11px;color:var(--muted);opacity:.7;
+    margin-top:2px;line-height:1.4
+  }
+
+  /* Preload chip (silencioso, en Home) */
+  .preload-chip{
+    position:absolute;top:calc(env(safe-area-inset-top) + 12px);left:16px;
+    background:rgba(255,255,255,.05);border:1px solid var(--stroke);
+    color:var(--muted);padding:6px 12px;border-radius:999px;
+    font-size:11px;font-weight:600;display:none;align-items:center;gap:8px;
+    transition:all .3s;max-width:60vw
+  }
+  .preload-chip.show{display:inline-flex}
+  .preload-chip.done{
+    background:rgba(200,255,46,.1);border-color:rgba(200,255,46,.35);
+    color:var(--laser)
+  }
+  .preload-chip .mini-spin{
+    width:10px;height:10px;border-radius:50%;
+    border:2px solid rgba(255,255,255,.15);border-top-color:var(--laser);
+    animation:spin .8s linear infinite;flex:0 0 auto
+  }
+  .preload-chip.done .mini-spin{display:none}
+  .preload-chip .txt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .preload-chip .pct{
+    font-family:ui-monospace,monospace;font-variant-numeric:tabular-nums;
+    color:var(--paper);flex:0 0 auto
+  }
+
   /* Toasts */
   .toast{
     position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 100px);
@@ -461,6 +530,11 @@
   <!-- ============== HOME ============== -->
   <section id="home" class="view active">
     <button class="install-chip" id="btnInstall">⬇ Instalar app</button>
+    <button class="preload-chip" id="preloadChip">
+      <span class="mini-spin"></span>
+      <span class="txt" id="preloadTxt">Preparando funciones…</span>
+      <span class="pct" id="preloadPct">0%</span>
+    </button>
     <div class="logo-lockup">
       <svg class="logo-badge" viewBox="0 0 512 512" aria-hidden="true">
         <defs>
@@ -495,7 +569,7 @@
       <span class="count" id="libCount" style="display:none">0</span>
     </button>
 
-    <div class="hint">by Ohmygoch · v1.2</div>
+    <div class="hint">by Ohmygoch · v1.2.1</div>
   </section>
 
   <!-- ============== CAMERA ============== -->
@@ -723,6 +797,19 @@
   </div>
 </div>
 
+<!-- ============== HEAVY DOWNLOAD OVERLAY ============== -->
+<div class="lib-overlay" id="libOverlay">
+  <div class="lib-card-dl">
+    <div class="lib-icon" id="libIcon">⚙️</div>
+    <div class="lib-name" id="libName">Preparando…</div>
+    <div class="lib-status" id="libStatus">Conectando…</div>
+    <div class="lib-bar"><i id="libBarFill"></i></div>
+    <div class="lib-meta" id="libMeta">—</div>
+    <div class="lib-note" id="libNote"></div>
+    <button class="btn ghost sm" id="libCancel" style="margin-top:4px">Cancelar</button>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js" defer></script>
@@ -784,20 +871,122 @@
   function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
   function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
 
-  // Lazy script loader
-  const _scripts = new Map();
-  function loadScript(src) {
-    if (_scripts.has(src)) return _scripts.get(src);
-    const p = new Promise((resolve, reject) => {
-      const s = document.createElement("script");
-      s.src = src; s.async = true;
-      s.onload = () => resolve();
-      s.onerror = () => reject(new Error("No se pudo cargar: " + src));
-      document.head.appendChild(s);
-    });
-    _scripts.set(src, p);
-    return p;
-  }
+  // ============================================================
+  // LibraryLoader — descarga con progreso visible + cache + abort
+  // ============================================================
+  const LibraryLoader = (() => {
+    const cache = new Map(); // url -> { promise, controller, blobUrl, subscribers:Set }
+
+    function fmtBytes(n) {
+      if (!n || n < 0) return "?";
+      if (n < 1024) return n + " B";
+      if (n < 1024 * 1024) return (n / 1024).toFixed(0) + " KB";
+      return (n / 1024 / 1024).toFixed(1) + " MB";
+    }
+    function fmtTime(sec) {
+      if (!isFinite(sec) || sec < 0) return "";
+      if (sec < 1) return "menos de 1s";
+      if (sec < 60) return Math.round(sec) + "s";
+      return Math.round(sec / 60) + "min";
+    }
+
+    function emit(entry, state) {
+      for (const fn of entry.subscribers) {
+        try { fn(state); } catch (_) {}
+      }
+    }
+
+    async function fetchWithProgress(url, signal, onProgress) {
+      const res = await fetch(url, { signal, cache: "default" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const total = +res.headers.get("content-length") || 0;
+      const reader = res.body.getReader();
+      const chunks = [];
+      let loaded = 0;
+      const t0 = performance.now();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        loaded += value.length;
+        const elapsed = (performance.now() - t0) / 1000;
+        const speed = loaded / Math.max(0.1, elapsed);
+        const eta = total > 0 ? (total - loaded) / Math.max(1, speed) : -1;
+        onProgress({
+          loaded, total,
+          percent: total ? loaded / total : 0,
+          speed, eta,
+        });
+      }
+      return new Blob(chunks, { type: "application/javascript" });
+    }
+
+    async function injectScript(blobUrl) {
+      return new Promise((resolve, reject) => {
+        const s = document.createElement("script");
+        s.src = blobUrl;
+        s.async = true;
+        s.onload = () => resolve();
+        s.onerror = () => reject(new Error("Error al inyectar script"));
+        document.head.appendChild(s);
+      });
+    }
+
+    function load(url, { name, onProgress } = {}) {
+      if (cache.has(url)) {
+        const entry = cache.get(url);
+        if (onProgress) entry.subscribers.add(onProgress);
+        return { promise: entry.promise, entry };
+      }
+
+      const entry = {
+        subscribers: new Set(),
+        controller: new AbortController(),
+        blobUrl: null,
+        promise: null,
+      };
+      if (onProgress) entry.subscribers.add(onProgress);
+      cache.set(url, entry);
+
+      entry.promise = (async () => {
+        try {
+          emit(entry, { phase: "download", name, loaded: 0, total: 0, percent: 0 });
+          const blob = await fetchWithProgress(url, entry.controller.signal, (p) => {
+            emit(entry, { phase: "download", name, ...p });
+          });
+
+          entry.blobUrl = URL.createObjectURL(blob);
+          emit(entry, { phase: "injecting", name, percent: 1 });
+
+          await injectScript(entry.blobUrl);
+          emit(entry, { phase: "ready", name, percent: 1 });
+          return entry.blobUrl;
+        } catch (err) {
+          emit(entry, { phase: "error", name, error: err });
+          cache.delete(url);
+          throw err;
+        }
+      })();
+
+      return { promise: entry.promise, entry };
+    }
+
+    function abort(url) {
+      const entry = cache.get(url);
+      if (entry && entry.controller) {
+        entry.controller.abort();
+        emit(entry, { phase: "cancelled" });
+      }
+    }
+
+    function isReady(url) {
+      const entry = cache.get(url);
+      if (!entry) return false;
+      return !!entry.blobUrl;
+    }
+
+    return { load, abort, isReady, fmtBytes, fmtTime };
+  })();
 
   /* =========================================================
      INDEXEDDB
@@ -883,27 +1072,25 @@
     views[name].classList.add("active");
   }
 
-  const MAX_DIM = 2400; // límite de resolución de trabajo
+  const MAX_DIM = 2400;
 
   const state = {
     stream: null, facing: "environment",
     torchOn: false, torchSupported: false,
     rawCapture: null,
     crop: { x1: 0.06, y1: 0.06, x2: 0.94, y2: 0.94, zoom: 1, panX: 0, panY: 0 },
-    cropped: null, // dataURL del crop final (sin filtro)
+    cropped: null,
     currentFilter: "auto",
     pages: [],
     qualityTimer: null,
-    // brush
     brush: {
       enabled: false,
-      size: 70,       // en px de pantalla
-      strength: 60,   // 0..100
-      strokes: [],    // { points: [{x,y}], radius, strength, erase }
-      mask: null,     // Uint8Array al tamaño de trabajo
+      size: 70,
+      strength: 60,
+      strokes: [],
+      mask: null,
       w: 0, h: 0,
     },
-    // work canvases
     preFilterCanvas: null,
     renderedCanvas: null,
     currentDocId: null,
@@ -1058,7 +1245,6 @@
       : "Pellizcá para zoom · arrastrá las esquinas";
   }
 
-  // Gesture handling unificado
   const activePointers = new Map();
   let gesture = null;
 
@@ -1127,35 +1313,155 @@
   cropStage.addEventListener("pointerup", endPointer);
   cropStage.addEventListener("pointercancel", endPointer);
 
-  // Auto-detección con OpenCV (lazy load)
-  let opencvLoading = null;
-  async function ensureOpenCV() {
-    if (window.cv && window.cv.Mat) return window.cv;
-    if (opencvLoading) return opencvLoading;
-    opencvLoading = new Promise((resolve, reject) => {
-      const s = document.createElement("script");
-      s.src = "https://docs.opencv.org/4.8.0/opencv.js";
-      s.async = true;
-      s.onload = () => {
-        if (window.cv && window.cv.Mat) return resolve(window.cv);
-        // OpenCV se inicializa async vía callback
-        window.cv = window.cv || {};
-        const prev = window.cv.onRuntimeInitialized;
-        window.cv.onRuntimeInitialized = () => {
-          if (typeof prev === "function") prev();
-          resolve(window.cv);
-        };
-        // Fallback: poll
-        const t0 = Date.now();
-        const check = setInterval(() => {
-          if (window.cv && window.cv.Mat) { clearInterval(check); resolve(window.cv); }
-          else if (Date.now() - t0 > 20000) { clearInterval(check); reject(new Error("Timeout OpenCV")); }
-        }, 200);
-      };
-      s.onerror = () => reject(new Error("No se pudo cargar OpenCV"));
-      document.head.appendChild(s);
+  // ============================================================
+  // OpenCV — carga con progreso + precarga silenciosa
+  // ============================================================
+  const OPENCV_URL = "https://docs.opencv.org/4.8.0/opencv.js";
+  let opencvPromise = null;
+  let opencvReady = false;
+
+  const libOverlay = $("#libOverlay");
+  const libIcon = $("#libIcon");
+  const libNameEl = $("#libName");
+  const libStatusEl = $("#libStatus");
+  const libBarFill = $("#libBarFill");
+  const libMetaEl = $("#libMeta");
+  const libNoteEl = $("#libNote");
+  const libCancelBtn = $("#libCancel");
+  const preloadChip = $("#preloadChip");
+  const preloadTxt = $("#preloadTxt");
+  const preloadPct = $("#preloadPct");
+
+  let currentLibURL = null;
+  let preloadState = { opencv: 0, tesseract: 0 };
+
+  function updatePreloadChip() {
+    const vals = Object.values(preloadState);
+    if (!vals.length) return;
+    const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+    const allDone = vals.every((v) => v >= 1);
+    preloadChip.classList.add("show");
+    if (allDone) {
+      preloadChip.classList.add("done");
+      preloadTxt.textContent = "Funciones listas";
+      preloadPct.textContent = "✓";
+      setTimeout(() => preloadChip.classList.remove("show"), 2200);
+    } else {
+      preloadTxt.textContent = "Preparando funciones…";
+      preloadPct.textContent = Math.round(avg * 100) + "%";
+    }
+  }
+
+  function showLibOverlay({ icon, name, status, percent, meta, note }) {
+    libIcon.textContent = icon || "⚙️";
+    libIcon.classList.toggle("spin", !percent || percent < 1);
+    libNameEl.textContent = name || "Preparando…";
+    libStatusEl.textContent = status || "";
+    libBarFill.style.width = Math.round((percent || 0) * 100) + "%";
+    libMetaEl.textContent = meta || "";
+    libNoteEl.textContent = note || "";
+    libCancelBtn.style.display = currentLibURL ? "" : "none";
+    libOverlay.classList.add("show");
+  }
+  function hideLibOverlay() { libOverlay.classList.remove("show"); }
+  libCancelBtn.addEventListener("click", () => {
+    if (currentLibURL) {
+      LibraryLoader.abort(currentLibURL);
+      showToast("Descarga cancelada. Podés reintentar.");
+    }
+    hideLibOverlay();
+  });
+
+  function handleProgress(state, { silent = false, label = "", icon = "⚙️" } = {}) {
+    if (state.phase === "download") {
+      const key = label.includes("OCR") ? "tesseract" : "opencv";
+      preloadState[key] = state.total ? state.percent : 0;
+      updatePreloadChip();
+    }
+    if (state.phase === "ready") {
+      const key = label.includes("OCR") ? "tesseract" : "opencv";
+      preloadState[key] = 1;
+      updatePreloadChip();
+    }
+    if (silent) return;
+
+    if (state.phase === "download") {
+      const pct = state.total ? Math.round(state.percent * 100) : 0;
+      const meta = state.total
+        ? `${LibraryLoader.fmtBytes(state.loaded)} / ${LibraryLoader.fmtBytes(state.total)} · ${pct}%${
+            state.eta > 0 ? " · ~" + LibraryLoader.fmtTime(state.eta) + " restantes" : ""
+          }`
+        : `${LibraryLoader.fmtBytes(state.loaded)} descargados`;
+      showLibOverlay({
+        icon, name: label,
+        status: "Descargando…",
+        percent: state.total ? state.percent : 0.1,
+        meta,
+        note: "Solo la primera vez. Después queda cacheado y es instantáneo.",
+      });
+    } else if (state.phase === "injecting") {
+      showLibOverlay({
+        icon, name: label,
+        status: "Inicializando motor…",
+        percent: 0.95,
+        meta: "Compilando WASM (puede tardar 1-2s)",
+        note: "",
+      });
+    } else if (state.phase === "ready") {
+      showLibOverlay({
+        icon: "✅", name: label,
+        status: "¡Listo!", percent: 1, meta: "", note: "",
+      });
+      setTimeout(hideLibOverlay, 350);
+    } else if (state.phase === "error") {
+      hideLibOverlay();
+    }
+  }
+
+  function ensureOpenCV({ silent = false } = {}) {
+    if (opencvPromise) return opencvPromise;
+    currentLibURL = OPENCV_URL;
+    const { promise } = LibraryLoader.load(OPENCV_URL, {
+      name: "Detector de bordes",
+      onProgress: (state) => {
+        handleProgress(state, {
+          silent,
+          label: "Detector de bordes",
+          icon: "✨",
+        });
+      },
     });
-    return opencvLoading;
+
+    opencvPromise = promise.then(() => new Promise((resolve, reject) => {
+      if (window.cv && window.cv.Mat) {
+        opencvReady = true;
+        return resolve(window.cv);
+      }
+      window.cv = window.cv || {};
+      const prev = window.cv.onRuntimeInitialized;
+      window.cv.onRuntimeInitialized = () => {
+        if (typeof prev === "function") prev();
+        opencvReady = true;
+        resolve(window.cv);
+      };
+      setTimeout(() => {
+        if (!opencvReady) reject(new Error("OpenCV no inicializó a tiempo"));
+      }, 30000);
+    })).catch((err) => {
+      opencvPromise = null;
+      throw err;
+    });
+
+    return opencvPromise;
+  }
+
+  async function preloadOpenCV() {
+    try {
+      await ensureOpenCV({ silent: true });
+    } catch (e) {
+      preloadState.opencv = 1;
+      updatePreloadChip();
+    }
   }
 
   async function autoDetectEdges() {
@@ -1164,11 +1470,9 @@
     btn.disabled = true;
     btn.innerHTML = `<span class="spinner"></span> Detectando…`;
     try {
-      showToast("Cargando detector (~8MB la primera vez)…", 2600);
-      await ensureOpenCV();
+      await ensureOpenCV({ silent: false });
       const cv = window.cv;
 
-      // Reducir imagen para acelerar
       const maxW = 800;
       const scale = Math.min(1, maxW / cropImg.naturalWidth);
       const w = Math.round(cropImg.naturalWidth * scale);
@@ -1217,17 +1521,13 @@
         for (let i = 0; i < 4; i++) {
           pts.push({ x: best.data32S[i*2] / w, y: best.data32S[i*2+1] / h });
         }
-        // Ordenar en TL, TR, BR, BL
         const cx = pts.reduce((s, p) => s + p.x, 0) / 4;
         const cy = pts.reduce((s, p) => s + p.y, 0) / 4;
         pts.sort((a, b) => Math.atan2(a.y - cy, a.x - cx) - Math.atan2(b.y - cy, b.x - cx));
-        // El sort anterior da orden circular; rotamos para que empiece por el TL
         let start = pts.findIndex((p) => p.x < cx && p.y < cy);
         if (start < 0) start = 0;
         const ordered = [pts[start], pts[(start+1)%4], pts[(start+2)%4], pts[(start+3)%4]];
-        result = {
-          tl: ordered[0], tr: ordered[1], br: ordered[2], bl: ordered[3],
-        };
+        result = { tl: ordered[0], tr: ordered[1], br: ordered[2], bl: ordered[3] };
         best.delete();
       }
       src.delete(); gray.delete(); blur.delete(); edges.delete();
@@ -1237,7 +1537,6 @@
         showToast("No pudimos detectar bordes. Ajustá a mano.");
         return;
       }
-      // Aplicar crop = bounding box de los 4 puntos
       const xs = [result.tl.x, result.tr.x, result.br.x, result.bl.x];
       const ys = [result.tl.y, result.tr.y, result.br.y, result.bl.y];
       state.crop.x1 = clamp(Math.min(...xs) - 0.005, 0, 1);
@@ -1260,7 +1559,6 @@
      WORK CANVASES
      ========================================================= */
   function getWorkCanvas(imgEl) {
-    // Escala la imagen para respetar MAX_DIM y devuelve un canvas
     const nw = imgEl.naturalWidth, nh = imgEl.naturalHeight;
     const scale = Math.min(1, MAX_DIM / Math.max(nw, nh));
     const w = Math.round(nw * scale);
@@ -1358,7 +1656,6 @@
     if (b.mask) b.mask.fill(0);
   }
 
-  // Pinta un punto en el mask (aditivo para acumular intensidad)
   function paintDot(cx, cy, radius, strengthPct, erase) {
     const b = state.brush;
     const w = b.w, h = b.h, mask = b.mask;
@@ -1402,20 +1699,17 @@
       const i4 = i * 4;
       for (let c = 0; c < 3; c++) {
         const v = d[i4 + c];
-        // smoothstep entre 55 y 155: 0 en oscuro, 1 en claro
         let t = (v - 55) / 100;
         if (t <= 0) continue;
         if (t > 1) t = 1;
         t = t * t * (3 - 2 * t);
-        const newV = v + (255 - v) * mf * t;
-        d[i4 + c] = newV;
+        d[i4 + c] = v + (255 - v) * mf * t;
       }
     }
     ctx.putImageData(img, 0, 0);
     return baseCanvas;
   }
 
-  // Reaplica todos los strokes sobre el mask (para undo)
   function replayStrokes() {
     const b = state.brush;
     resetMask();
@@ -1459,10 +1753,8 @@
 
   function renderFinal() {
     const b = state.brush;
-    // 1. Filtrar
     let out;
     if (b.enabled && b.w && b.mask) {
-      // necesita trabajar sobre canvas ya filtrado del mismo tamaño
       out = applyFilterToCanvas(state.preFilterCanvas, state.currentFilter);
       applyShadowBrushToCanvas(out);
     } else {
@@ -1498,7 +1790,6 @@
       });
       rail.appendChild(btn);
     });
-    // Miniaturas en vivo (usando el cropped como base)
     requestAnimationFrame(() => {
       const img = new Image();
       img.onload = () => {
@@ -1543,18 +1834,12 @@
 
   toolFilters.addEventListener("click", () => setBrushEnabled(false));
   toolBrush.addEventListener("click", () => {
-    // Asegurar preFilterCanvas está listo
-    if (!state.preFilterCanvas) {
-      showToast("Primero cargá una imagen");
-      return;
-    }
-    // Inicializar mask del tamaño actual
+    if (!state.preFilterCanvas) { showToast("Primero cargá una imagen"); return; }
     ensureMask(state.preFilterCanvas.width, state.preFilterCanvas.height);
     setBrushEnabled(true);
     showToast("Pintá sobre las sombras ✨");
   });
 
-  // Sliders
   const brushSizeInput = $("#brushSize");
   const brushStrengthInput = $("#brushStrength");
   brushSizeInput.addEventListener("input", () => {
@@ -1580,7 +1865,6 @@
     showToast("Pincel limpiado");
   });
 
-  // Conversión de coords cliente → imagen
   function clientToImage(clientX, clientY) {
     const rect = filtersImg.getBoundingClientRect();
     const nx = (clientX - rect.left) / rect.width;
@@ -1590,10 +1874,7 @@
       x: nx * c.width,
       y: ny * c.height,
       inBounds: nx >= 0 && nx <= 1 && ny >= 0 && ny <= 1,
-      screenX: clientX - rect.left,
-      screenY: clientY - rect.top,
       rectW: rect.width,
-      rectH: rect.height,
     };
   }
   function brushRadiusInImage(screenRadius, rectW) {
@@ -1607,7 +1888,7 @@
   filtersStage.addEventListener("pointerdown", (e) => {
     if (!state.brush.enabled) return;
     e.preventDefault();
-    if (paintPointerId !== null) return; // ya hay uno pintando
+    if (paintPointerId !== null) return;
     paintPointerId = e.pointerId;
     filtersStage.setPointerCapture(e.pointerId);
     const pt = clientToImage(e.clientX, e.clientY);
@@ -1619,14 +1900,12 @@
       erase: false,
     };
     state.isPainting = true;
-    // Mostrar cursor
     const wrapRect = filtersImgWrap.getBoundingClientRect();
     brushCursor.style.width  = state.brush.size + "px";
     brushCursor.style.height = state.brush.size + "px";
     brushCursor.style.left   = (e.clientX - wrapRect.left) + "px";
     brushCursor.style.top    = (e.clientY - wrapRect.top) + "px";
     brushCursor.classList.add("show");
-    // Pintar el primer punto
     paintDot(pt.x, pt.y, currentStroke.radius, currentStroke.strength, false);
     scheduleRenderFinal();
     buzz(6);
@@ -1634,7 +1913,6 @@
 
   filtersStage.addEventListener("pointermove", (e) => {
     if (!state.brush.enabled) return;
-    // Actualizar cursor siempre
     const wrapRect = filtersImgWrap.getBoundingClientRect();
     brushCursor.style.left = (e.clientX - wrapRect.left) + "px";
     brushCursor.style.top  = (e.clientY - wrapRect.top) + "px";
@@ -1647,9 +1925,8 @@
     const n = Math.max(1, Math.ceil(d / step));
     for (let i = 1; i <= n; i++) {
       const t = i / n;
-      const x = last.x + (pt.x - last.x) * t;
-      const y = last.y + (pt.y - last.y) * t;
-      paintDot(x, y, currentStroke.radius, currentStroke.strength, false);
+      paintDot(last.x + (pt.x - last.x) * t, last.y + (pt.y - last.y) * t,
+               currentStroke.radius, currentStroke.strength, false);
     }
     currentStroke.points.push({ x: pt.x, y: pt.y });
     scheduleRenderFinal();
@@ -1666,7 +1943,7 @@
   };
   filtersStage.addEventListener("pointerup", endPaint);
   filtersStage.addEventListener("pointercancel", endPaint);
-  filtersStage.addEventListener("pointerleave", (e) => {
+  filtersStage.addEventListener("pointerleave", () => {
     brushCursor.classList.remove("show");
   });
   filtersStage.addEventListener("pointerenter", () => {
@@ -1682,7 +1959,6 @@
       if (state.brush.enabled) return;
       if (e.target.closest(".brush-cursor")) return;
       originalSrc = filtersImg.src;
-      // Mostrar el cropped sin filtro
       filtersImg.src = state.cropped;
       $("#compareHint").style.opacity = "0";
     };
@@ -1703,7 +1979,6 @@
     state.preFilterCanvas = canvas;
     state.cropped = canvas.toDataURL("image/jpeg", 0.92);
 
-    // Reset brush state para esta imagen
     state.brush.mask = null;
     state.brush.strokes = [];
     state.brush.w = 0;
@@ -1793,11 +2068,39 @@
   const ocrActions = $("#ocrActions");
   const ocrRing = $("#ocrRing");
 
-  async function ensureTesseract() {
-    if (window.Tesseract) return window.Tesseract;
-    await loadScript("https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js");
-    if (!window.Tesseract) throw new Error("Tesseract no cargó");
-    return window.Tesseract;
+  const TESSERACT_URL = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
+  let tesseractPromise = null;
+
+  function ensureTesseract({ silent = false } = {}) {
+    if (tesseractPromise) return tesseractPromise;
+    currentLibURL = TESSERACT_URL;
+    const { promise } = LibraryLoader.load(TESSERACT_URL, {
+      name: "Motor OCR",
+      onProgress: (state) => {
+        handleProgress(state, {
+          silent,
+          label: "Motor OCR",
+          icon: "📝",
+        });
+      },
+    });
+    tesseractPromise = promise.then(() => {
+      if (!window.Tesseract) throw new Error("Tesseract no cargó");
+      return window.Tesseract;
+    }).catch((e) => {
+      tesseractPromise = null;
+      throw e;
+    });
+    return tesseractPromise;
+  }
+
+  async function preloadTesseract() {
+    try {
+      await ensureTesseract({ silent: true });
+    } catch (_) {
+      preloadState.tesseract = 1;
+      updatePreloadChip();
+    }
   }
 
   async function runOCR(dataURLs, docName = "") {
@@ -1811,7 +2114,7 @@
     ocrBarFill.style.width = "0%";
 
     try {
-      const Tesseract = await ensureTesseract();
+      const Tesseract = await ensureTesseract({ silent: false });
       ocrStatus.textContent = "Cargando idioma (español + inglés)…";
       const worker = await Tesseract.createWorker(["spa", "eng"], 1, {
         logger: (m) => {
@@ -1819,7 +2122,19 @@
             const pct = Math.round((m.progress || 0) * 100);
             ocrBarFill.style.width = pct + "%";
             ocrStatus.textContent = `Reconociendo… ${pct}%`;
-          } else if (m.status) {
+            return;
+          }
+          if (m.status === "loading language traineddata") {
+            const pct = Math.round((m.progress || 0) * 100);
+            ocrStatus.textContent = `Descargando idioma… ${pct}% (solo la primera vez)`;
+            ocrBarFill.style.width = pct + "%";
+            return;
+          }
+          if (m.status === "initializing api") {
+            ocrStatus.textContent = "Inicializando OCR…";
+            return;
+          }
+          if (m.status) {
             ocrStatus.textContent = m.status.charAt(0).toUpperCase() + m.status.slice(1) + "…";
           }
         },
@@ -1873,7 +2188,7 @@
   });
 
   /* =========================================================
-     BIBLIOTECA (igual + sin cambios)
+     BIBLIOTECA
      ========================================================= */
   const urlCache = new Map();
   function blobURL(blob) {
@@ -2070,14 +2385,11 @@
       },
       {
         icon: "🗑️", label: "Borrar documento", danger: true,
-        action: async () => {
-          $("#modalDelete").classList.add("show");
-        },
+        action: async () => { $("#modalDelete").classList.add("show"); },
       },
     ]);
   }
 
-  // Modales genéricos
   $$(".modal-backdrop").forEach((m) => {
     m.addEventListener("click", (e) => {
       if (e.target === m || e.target.hasAttribute("data-close")) m.classList.remove("show");
@@ -2147,7 +2459,6 @@
   /* =========================================================
      EVENTOS PRINCIPALES
      ========================================================= */
-  // HOME
   $("#btnStart").addEventListener("click", async () => {
     state.pages = [];
     state.currentDocId = null;
@@ -2156,7 +2467,6 @@
   });
   $("#btnLibrary").addEventListener("click", openLibrary);
 
-  // CAMERA
   $("#btnClose").addEventListener("click", () => { stopCamera(); show("home"); });
   $("#btnFlash").addEventListener("click", toggleFlash);
   $("#btnShutter").addEventListener("click", capture);
@@ -2174,7 +2484,6 @@
     e.target.value = "";
   });
 
-  // CROP
   $("#cropCancel").addEventListener("click", async () => {
     state.crop.zoom = 1; state.crop.panX = 0; state.crop.panY = 0;
     applyCropTransform();
@@ -2192,7 +2501,6 @@
   $("#cropAuto").addEventListener("click", autoDetectEdges);
   $("#cropNext").addEventListener("click", goToFilters);
 
-  // FILTERS
   $("#filtersBack").addEventListener("click", () => {
     setBrushEnabled(false);
     show("crop");
@@ -2212,7 +2520,6 @@
     show("done");
   });
 
-  // DONE
   function updateDoneScreen() {
     const n = state.pages.length;
     $("#doneSub").textContent =
@@ -2262,10 +2569,8 @@
     await startCamera();
   });
 
-  // LIBRARY
   $("#libBack").addEventListener("click", () => show("home"));
 
-  // DOC
   $("#docBack").addEventListener("click", () => {
     state.currentDocId = null;
     show("library"); renderLibrary();
@@ -2335,7 +2640,7 @@
   }
 
   /* =========================================================
-     BOOT
+     BOOT + PRELOAD EN BACKGROUND
      ========================================================= */
   (async function boot() {
     await refreshLibraryCount();
@@ -2343,6 +2648,16 @@
     const action = params.get("action");
     if (action === "scan") { show("camera"); await startCamera(); }
     else if (action === "library") { openLibrary(); }
+
+    const startPreload = () => {
+      preloadOpenCV();
+      setTimeout(preloadTesseract, 3500);
+    };
+    if ("requestIdleCallback" in window) {
+      requestIdleCallback(startPreload, { timeout: 4000 });
+    } else {
+      setTimeout(startPreload, 2500);
+    }
   })();
 })();
 </script>
