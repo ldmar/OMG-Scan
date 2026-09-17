@@ -1,0 +1,38 @@
+{
+  "name": "OMG Scan — by Ohmygoch",
+  "short_name": "OMG Scan",
+  "description": "Escaneá, mejorá y exportá documentos en segundos. Sin ads.",
+  "start_url": "./?utm_source=pwa",
+  "scope": "./",
+  "id": "/omg-scan/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait",
+  "background_color": "#0B0B12",
+  "theme_color": "#0B0B12",
+  "lang": "es",
+  "dir": "ltr",
+  "categories": ["productivity", "utilities", "business"],
+  "prefer_related_applications": false,
+  "icons": [
+    { "src": "./icons/icon-192.png",          "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/icon-512.png",          "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "./icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "./icons/favicon.svg",           "sizes": "any",     "type": "image/svg+xml" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Escanear ahora",
+      "short_name": "Escanear",
+      "url": "./?action=scan",
+      "icons": [{ "src": "./icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Biblioteca",
+      "short_name": "Biblioteca",
+      "url": "./?action=library",
+      "icons": [{ "src": "./icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}
