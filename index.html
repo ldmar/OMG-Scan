@@ -1,0 +1,979 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+<meta name="theme-color" content="#0B0B12" />
+<meta name="color-scheme" content="dark" />
+<title>OMG Scan · by Ohmygoch</title>
+<meta name="description" content="Escaneá, mejorá y exportá a PDF en segundos." />
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='116' fill='%230B0B12'/%3E%3Crect x='150' y='150' width='212' height='212' rx='64' fill='none' stroke='%236C4DFF' stroke-width='40'/%3E%3Cline x1='182' y1='256' x2='330' y2='256' stroke='%23C8FF2E' stroke-width='22' stroke-linecap='round'/%3E%3C/svg%3E" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="OMG Scan" />
+<meta name="mobile-web-app-capable" content="yes" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='116' fill='%230B0B12'/%3E%3Crect x='150' y='150' width='212' height='212' rx='64' fill='none' stroke='%236C4DFF' stroke-width='40'/%3E%3Cline x1='182' y1='256' x2='330' y2='256' stroke='%23C8FF2E' stroke-width='22' stroke-linecap='round'/%3E%3C/svg%3E" />
+<style>
+  :root{
+    --ink:#0B0B12; --paper:#F7F5F0; --violet:#6C4DFF; --laser:#C8FF2E;
+    --cyan:#23D3EE; --coral:#FF5A5F; --muted:#8A8A97; --card:#15151F;
+    --stroke:rgba(255,255,255,.08);
+    --safe-t: env(safe-area-inset-top, 0px);
+    --safe-b: env(safe-area-inset-bottom, 0px);
+    --safe-l: env(safe-area-inset-left, 0px);
+    --safe-r: env(safe-area-inset-right, 0px);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;background:var(--ink);color:var(--paper);
+    font-family:-apple-system,BlinkMacSystemFont,'Inter',system-ui,sans-serif;
+    overscroll-behavior:none; -webkit-user-select:none; user-select:none}
+  button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+  #app{position:fixed;inset:0;display:flex;flex-direction:column}
+  .view{position:absolute;inset:0;display:none;flex-direction:column}
+  .view.active{display:flex}
+
+  /* ---------- HOME ---------- */
+  #home{padding:calc(env(safe-area-inset-top) + 24px) 24px calc(env(safe-area-inset-bottom) + 24px);
+    justify-content:center;align-items:center;gap:28px;text-align:center}
+  .logo-lockup{display:flex;flex-direction:column;align-items:center;gap:14px}
+  .logo-badge{width:104px;height:104px}
+  .brand{font-weight:700;font-size:38px;letter-spacing:-1.2px;line-height:1}
+  .brand span{color:var(--violet)}
+  .tagline{color:var(--muted);font-size:15px;margin-top:6px;max-width:280px;line-height:1.4}
+  .cta{
+    width:100%;max-width:340px;padding:20px;border-radius:18px;
+    background:linear-gradient(135deg,var(--violet),var(--cyan));
+    color:#fff;font-weight:700;font-size:17px;letter-spacing:.2px;
+    box-shadow:0 12px 40px -12px rgba(108,77,255,.6);
+    display:flex;align-items:center;justify-content:center;gap:10px;
+    transition:transform .15s ease
+  }
+  .cta:active{transform:scale(.97)}
+  .cta svg{width:22px;height:22px}
+  .hint{color:var(--muted);font-size:12px;letter-spacing:.4px}
+
+  /* ---------- CAMERA ---------- */
+  #camera{background:#000}
+  #video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000}
+  .cam-top{
+    position:absolute;top:calc(env(safe-area-inset-top) + 10px);left:0;right:0;
+    display:flex;justify-content:space-between;padding:0 16px;z-index:5
+  }
+  .chip{
+    background:rgba(0,0,0,.45);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+    border:1px solid var(--stroke);color:var(--paper);
+    padding:9px 14px;border-radius:999px;font-size:13px;font-weight:600;
+    display:flex;align-items:center;gap:6px
+  }
+  .chip.on{background:var(--laser);color:var(--ink);border-color:var(--laser)}
+  .quality{
+    position:absolute;top:calc(env(safe-area-inset-top) + 62px);left:50%;transform:translateX(-50%);
+    background:rgba(0,0,0,.45);backdrop-filter:blur(12px);
+    padding:7px 14px;border-radius:999px;font-size:12px;display:flex;align-items:center;gap:8px;
+    z-index:5
+  }
+  .quality .dot{width:8px;height:8px;border-radius:50%;background:var(--laser);
+    box-shadow:0 0 12px var(--laser)}
+  .quality.warn .dot{background:#FFB020;box-shadow:0 0 12px #FFB020}
+  .quality.bad  .dot{background:var(--coral);box-shadow:0 0 12px var(--coral)}
+  .frame-guide{
+    position:absolute;inset:10% 6%;pointer-events:none;
+    border:0;z-index:4;opacity:.9
+  }
+  .frame-guide path{stroke:var(--laser);stroke-width:3;fill:none;stroke-linecap:round}
+  .cam-bottom{
+    position:absolute;bottom:calc(env(safe-area-inset-bottom) + 20px);left:0;right:0;
+    display:flex;justify-content:space-around;align-items:center;padding:0 24px;z-index:5
+  }
+  .icon-btn{
+    width:56px;height:56px;border-radius:50%;
+    background:rgba(255,255,255,.08);backdrop-filter:blur(12px);
+    display:flex;align-items:center;justify-content:center;
+    border:1px solid var(--stroke);transition:transform .12s
+  }
+  .icon-btn:active{transform:scale(.92)}
+  .icon-btn svg{width:24px;height:24px;stroke:var(--paper);fill:none;stroke-width:2;
+    stroke-linecap:round;stroke-linejoin:round}
+  .shutter{
+    width:82px;height:82px;border-radius:50%;
+    background:linear-gradient(135deg,var(--violet),var(--cyan));
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:0 0 0 4px rgba(255,255,255,.15),0 12px 40px -8px rgba(108,77,255,.7);
+    transition:transform .12s
+  }
+  .shutter:active{transform:scale(.94)}
+  .shutter::after{content:"";width:66px;height:66px;border-radius:50%;
+    background:var(--paper);transition:transform .12s}
+  .shutter:active::after{transform:scale(.92)}
+  .sweep{
+    position:absolute;left:0;right:0;height:3px;
+    background:linear-gradient(90deg,transparent,var(--laser),transparent);
+    top:-10%;opacity:0;pointer-events:none;z-index:3;
+    filter:drop-shadow(0 0 12px var(--laser))
+  }
+  .sweep.go{animation:sweep .55s ease-out}
+  @keyframes sweep{0%{top:0;opacity:1}100%{top:100%;opacity:0}}
+
+  /* ---------- CROP ---------- */
+  #crop{background:#000;overflow:hidden}
+  .crop-stage{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    padding:70px 20px 130px}
+  .crop-wrap{position:relative;max-width:100%;max-height:100%;
+    filter:drop-shadow(0 8px 30px rgba(0,0,0,.6))}
+  .crop-wrap img{display:block;max-width:100%;max-height:100%;border-radius:6px}
+  .crop-mask{position:absolute;inset:0;pointer-events:none;border-radius:6px;
+    box-shadow:0 0 0 2000px rgba(0,0,0,.72) inset;display:none}
+  .crop-rect{position:absolute;border:2px solid var(--laser);
+    box-shadow:0 0 0 1px rgba(0,0,0,.35);border-radius:4px;
+    box-shadow:0 0 24px rgba(200,255,46,.35), 0 0 0 1px rgba(0,0,0,.35);
+    pointer-events:none}
+  .handle{
+    position:absolute;width:42px;height:42px;margin:-21px;
+    display:flex;align-items:center;justify-content:center;
+    touch-action:none;cursor:grab
+  }
+  .handle::before{content:"";width:18px;height:18px;border-radius:50%;
+    background:var(--laser);border:2px solid #fff;
+    box-shadow:0 4px 14px rgba(0,0,0,.4)}
+  .handle:active{cursor:grabbing}
+  .crop-bar{
+    position:absolute;bottom:calc(env(safe-area-inset-bottom) + 20px);left:0;right:0;
+    display:flex;justify-content:center;gap:12px;padding:0 20px;z-index:5
+  }
+  .btn{
+    padding:14px 22px;border-radius:14px;font-weight:700;font-size:15px;
+    background:var(--card);border:1px solid var(--stroke);color:var(--paper);
+    display:inline-flex;align-items:center;gap:8px;transition:transform .12s
+  }
+  .btn:active{transform:scale(.96)}
+  .btn.primary{background:linear-gradient(135deg,var(--violet),var(--cyan));color:#fff;border-color:transparent;
+    box-shadow:0 12px 32px -10px rgba(108,77,255,.7)}
+  .btn.ghost{background:rgba(255,255,255,.06)}
+  .top-bar{
+    position:absolute;top:calc(env(safe-area-inset-top) + 10px);left:0;right:0;
+    display:flex;justify-content:space-between;align-items:center;
+    padding:0 16px;z-index:6
+  }
+  .top-bar .title{font-weight:700;font-size:16px;letter-spacing:-.2px}
+
+  /* ---------- FILTERS ---------- */
+  #filters{background:var(--ink)}
+  .filters-stage{flex:1;display:flex;align-items:center;justify-content:center;
+    padding:80px 20px 20px;overflow:hidden;position:relative}
+  .filters-stage img{max-width:100%;max-height:100%;border-radius:8px;
+    box-shadow:0 20px 60px -20px rgba(0,0,0,.8)}
+  .compare-hint{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);
+    font-size:12px;color:var(--muted);background:rgba(0,0,0,.5);
+    padding:6px 12px;border-radius:999px;backdrop-filter:blur(8px)}
+  .filter-rail{
+    padding:8px 16px calc(env(safe-area-inset-bottom) + 16px);
+    display:flex;gap:10px;overflow-x:auto;overflow-y:hidden;
+    scrollbar-width:none;-webkit-overflow-scrolling:touch
+  }
+  .filter-rail::-webkit-scrollbar{display:none}
+  .filter-pill{
+    flex:0 0 auto;min-width:78px;padding:10px 14px;border-radius:14px;
+    background:var(--card);border:1px solid var(--stroke);
+    display:flex;flex-direction:column;align-items:center;gap:8px;
+    transition:all .15s ease;color:var(--muted);font-size:12px;font-weight:600
+  }
+  .filter-pill:active{transform:scale(.96)}
+  .filter-pill.on{border-color:var(--laser);background:rgba(200,255,46,.08);color:var(--paper)}
+  .filter-pill .swatch{width:44px;height:44px;border-radius:10px;overflow:hidden;
+    background:#222;display:flex;align-items:center;justify-content:center;
+    font-size:11px;color:#666}
+  .filter-pill.on .swatch{outline:2px solid var(--laser);outline-offset:2px}
+
+  /* ---------- EXPORT / DONE ---------- */
+  #done{padding:calc(env(safe-area-inset-top) + 30px) 24px calc(env(safe-area-inset-bottom) + 30px);
+    justify-content:center;align-items:center;text-align:center;gap:16px}
+  .check-circle{width:96px;height:96px;border-radius:50%;
+    background:linear-gradient(135deg,var(--violet),var(--cyan));
+    display:flex;align-items:center;justify-content:center;margin-bottom:6px;
+    box-shadow:0 20px 60px -20px rgba(108,77,255,.8);
+    animation:pop .5s cubic-bezier(.34,1.56,.64,1)}
+  @keyframes pop{0%{transform:scale(0);opacity:0}100%{transform:scale(1);opacity:1}}
+  .check-circle svg{width:48px;height:48px;stroke:#fff;fill:none;stroke-width:3;
+    stroke-linecap:round;stroke-linejoin:round}
+  .done-title{font-size:24px;font-weight:700;letter-spacing:-.6px}
+  .done-sub{color:var(--muted);font-size:14px}
+  .done-actions{width:100%;max-width:340px;display:flex;flex-direction:column;gap:10px;margin-top:12px}
+
+  /* ---------- TOAST ---------- */
+  .toast{
+    position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 100px);
+    transform:translateX(-50%) translateY(20px);
+    background:var(--card);border:1px solid var(--stroke);
+    padding:12px 20px;border-radius:999px;font-size:13px;font-weight:600;
+    opacity:0;pointer-events:none;transition:all .25s ease;z-index:999;
+    box-shadow:0 12px 40px rgba(0,0,0,.5)
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ============== HOME ============== -->
+  <section id="home" class="view active">
+    <div class="logo-lockup">
+      <svg class="logo-badge" viewBox="0 0 512 512" aria-hidden="true">
+        <defs>
+          <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#6C4DFF"/>
+            <stop offset="1" stop-color="#23D3EE"/>
+          </linearGradient>
+        </defs>
+        <rect width="512" height="512" rx="116" fill="#15151F"/>
+        <rect x="150" y="150" width="212" height="212" rx="64"
+              fill="none" stroke="url(#g1)" stroke-width="40"/>
+        <line x1="182" y1="256" x2="330" y2="256"
+              stroke="#C8FF2E" stroke-width="22" stroke-linecap="round"/>
+      </svg>
+      <div>
+        <div class="brand">OMG <span>Scan</span></div>
+        <div class="tagline">Del clic al PDF perfecto. Sin ads, sin marcas de agua.</div>
+      </div>
+    </div>
+
+    <button class="cta" id="btnStart">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+        <circle cx="12" cy="13" r="4"/>
+      </svg>
+      Escanear documento
+    </button>
+
+    <div class="hint">by Ohmygoch · v1.0</div>
+  </section>
+
+  <!-- ============== CAMERA ============== -->
+  <section id="camera" class="view">
+    <video id="video" playsinline autoplay muted></video>
+    <div class="sweep" id="sweep"></div>
+
+    <svg class="frame-guide" viewBox="0 0 100 100" preserveAspectRatio="none">
+      <path d="M4,14 L4,6 Q4,4 6,4 L14,4"/>
+      <path d="M86,4 L94,4 Q96,4 96,6 L96,14"/>
+      <path d="M96,86 L96,94 Q96,96 94,96 L86,96"/>
+      <path d="M14,96 L6,96 Q4,96 4,94 L4,86"/>
+    </svg>
+
+    <div class="cam-top">
+      <button class="chip" id="btnClose">✕ Cerrar</button>
+      <button class="chip" id="btnFlash">⚡ Flash</button>
+    </div>
+
+    <div class="quality" id="quality">
+      <div class="dot"></div>
+      <span id="qualityText">Enfocá el documento</span>
+    </div>
+
+    <div class="cam-bottom">
+      <button class="icon-btn" id="btnGallery" title="Desde galería">
+        <svg viewBox="0 0 24 24">
+          <rect x="3" y="3" width="18" height="18" rx="2"/>
+          <circle cx="8.5" cy="8.5" r="1.5"/>
+          <path d="M21 15l-5-5L5 21"/>
+        </svg>
+      </button>
+      <button class="shutter" id="btnShutter" aria-label="Capturar"></button>
+      <button class="icon-btn" id="btnSwitch" title="Cambiar cámara">
+        <svg viewBox="0 0 24 24">
+          <path d="M17 1l4 4-4 4"/>
+          <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+          <path d="M7 23l-4-4 4-4"/>
+          <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+        </svg>
+      </button>
+    </div>
+    <input type="file" id="fileInput" accept="image/*" capture="environment"
+           style="display:none" />
+  </section>
+
+  <!-- ============== CROP ============== -->
+  <section id="crop" class="view">
+    <div class="top-bar">
+      <button class="chip" id="cropCancel">← Atrás</button>
+      <div class="title">Ajustar bordes</div>
+      <button class="chip" id="cropReset">Reset</button>
+    </div>
+    <div class="crop-stage">
+      <div class="crop-wrap" id="cropWrap">
+        <img id="cropImg" alt="" />
+        <div class="crop-rect" id="cropRect"></div>
+        <div class="handle" data-h="tl" style="left:0;top:0"></div>
+        <div class="handle" data-h="tr" style="left:100%;top:0"></div>
+        <div class="handle" data-h="br" style="left:100%;top:100%"></div>
+        <div class="handle" data-h="bl" style="left:0;top:100%"></div>
+      </div>
+    </div>
+    <div class="crop-bar">
+      <button class="btn ghost" id="cropFull">Usar todo</button>
+      <button class="btn primary" id="cropNext">Aplicar ✨</button>
+    </div>
+  </section>
+
+  <!-- ============== FILTERS ============== -->
+  <section id="filters" class="view">
+    <div class="top-bar">
+      <button class="chip" id="filtersBack">← Atrás</button>
+      <div class="title">Filtros</div>
+      <button class="chip" id="filtersAdd">+ Página</button>
+    </div>
+    <div class="filters-stage">
+      <img id="filtersImg" alt="" />
+      <div class="compare-hint" id="compareHint">Tocá y mantené para ver el original</div>
+    </div>
+    <div class="filter-rail" id="filterRail"></div>
+  </section>
+
+  <!-- ============== DONE ============== -->
+  <section id="done" class="view">
+    <div class="check-circle">
+      <svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>
+    </div>
+    <div class="done-title" id="doneTitle">¡Listo!</div>
+    <div class="done-sub" id="doneSub">0 páginas listas para exportar</div>
+    <div class="done-actions">
+      <button class="btn primary" id="btnPdf">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        Descargar PDF
+      </button>
+      <button class="btn ghost" id="btnShare">Compartir PDF</button>
+      <button class="btn ghost" id="btnNew">Escanear otra</button>
+    </div>
+  </section>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js" defer></script>
+<script>
+(() => {
+  "use strict";
+
+  // ---------------- PWA MANIFEST (inline) ----------------
+  const manifest = {
+    name: "OMG Scan — by Ohmygoch",
+    short_name: "OMG Scan",
+    description: "Escaneá, mejorá y exportá documentos en segundos. Sin ads.",
+    start_url: location.pathname + "?utm_source=pwa",
+    scope: location.pathname.replace(/[^/]*$/, ""),
+    display: "standalone",
+    orientation: "portrait",
+    background_color: "#0B0B12",
+    theme_color: "#0B0B12",
+    lang: "es",
+    categories: ["productivity", "utilities", "business"],
+    icons: [{
+      src: "data:image/svg+xml;base64," + btoa(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" fill="#0B0B12"/><rect x="150" y="150" width="212" height="212" rx="64" fill="none" stroke="#6C4DFF" stroke-width="40"/><line x1="182" y1="256" x2="330" y2="256" stroke="#C8FF2E" stroke-width="22" stroke-linecap="round"/></svg>`),
+      sizes: "512x512",
+      type: "image/svg+xml",
+      purpose: "any maskable"
+    }]
+  };
+  try {
+    const mBlob = new Blob([JSON.stringify(manifest)], { type: "application/manifest+json" });
+    const link = document.createElement("link");
+    link.rel = "manifest";
+    link.href = URL.createObjectURL(mBlob);
+    document.head.appendChild(link);
+  } catch (_) {}
+
+  // ---------------- REFS ----------------
+  const $ = (sel) => document.querySelector(sel);
+  const views = {
+    home: $("#home"),
+    camera: $("#camera"),
+    crop: $("#crop"),
+    filters: $("#filters"),
+    done: $("#done"),
+  };
+  const video = $("#video");
+  const cropImg = $("#cropImg");
+  const cropWrap = $("#cropWrap");
+  const cropRect = $("#cropRect");
+  const filtersImg = $("#filtersImg");
+  const toast = $("#toast");
+  const qualityBox = $("#quality");
+  const qualityText = $("#qualityText");
+
+  // ---------------- STATE ----------------
+  const state = {
+    stream: null,
+    facing: "environment",
+    torchOn: false,
+    torchSupported: false,
+    rawCapture: null,     // dataURL original
+    crop: { x1: 0.06, y1: 0.06, x2: 0.94, y2: 0.94 }, // normalizado 0..1
+    cropped: null,        // dataURL después de crop
+    currentFilter: "auto",
+    pages: [],            // [{ dataURL }] del filtro aplicado
+    qualityTimer: null,
+    dragging: null,
+  };
+
+  const FILTERS = [
+    { id: "original", label: "Original" },
+    { id: "auto",     label: "OMG Auto" },
+    { id: "color",    label: "Color" },
+    { id: "gray",     label: "Escáner" },
+    { id: "bw",       label: "B/N" },
+  ];
+
+  // ---------------- UTIL ----------------
+  function show(name) {
+    Object.values(views).forEach((v) => v.classList.remove("active"));
+    views[name].classList.add("active");
+  }
+  function showToast(msg, ms = 1800) {
+    toast.textContent = msg;
+    toast.classList.add("show");
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => toast.classList.remove("show"), ms);
+  }
+  function buzz(ms = 8) {
+    try { navigator.vibrate && navigator.vibrate(ms); } catch (_) {}
+  }
+  function dataURLtoBlob(dataURL) {
+    const [h, b] = dataURL.split(",");
+    const m = h.match(/:(.*?);/)[1];
+    const bin = atob(b);
+    const u8 = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+    return new Blob([u8], { type: m });
+  }
+
+  // ---------------- CAMERA ----------------
+  async function startCamera() {
+    stopCamera();
+    try {
+      const constraints = {
+        audio: false,
+        video: {
+          facingMode: { ideal: state.facing },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
+      };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      state.stream = stream;
+      video.srcObject = stream;
+      await video.play().catch(() => {});
+
+      // Torch
+      const track = stream.getVideoTracks()[0];
+      const caps = track.getCapabilities ? track.getCapabilities() : {};
+      state.torchSupported = !!caps.torch;
+      state.torchOn = false;
+      updateFlashBtn();
+
+      startQualityLoop();
+    } catch (err) {
+      console.error(err);
+      showToast("No pudimos abrir la cámara. Usá Galería.");
+      $("#fileInput").click();
+    }
+  }
+  function stopCamera() {
+    stopQualityLoop();
+    if (state.stream) {
+      state.stream.getTracks().forEach((t) => t.stop());
+      state.stream = null;
+    }
+  }
+  function updateFlashBtn() {
+    const b = $("#btnFlash");
+    b.style.display = state.torchSupported ? "" : "none";
+    b.classList.toggle("on", state.torchOn);
+    b.textContent = state.torchOn ? "⚡ On" : "⚡ Flash";
+  }
+  async function toggleFlash() {
+    if (!state.stream || !state.torchSupported) return;
+    const track = state.stream.getVideoTracks()[0];
+    try {
+      await track.applyConstraints({ advanced: [{ torch: !state.torchOn }] });
+      state.torchOn = !state.torchOn;
+      updateFlashBtn();
+      buzz();
+    } catch (e) { showToast("Flash no disponible"); }
+  }
+
+  // ---------------- QUALITY (semáforo en vivo) ----------------
+  function startQualityLoop() {
+    stopQualityLoop();
+    const canvas = document.createElement("canvas");
+    canvas.width = 64; canvas.height = 36;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    state.qualityTimer = setInterval(() => {
+      if (video.readyState < 2) return;
+      try {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const d = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+        let sum = 0, sq = 0, n = d.length / 4;
+        for (let i = 0; i < d.length; i += 4) {
+          const l = (d[i] * 0.299 + d[i+1] * 0.587 + d[i+2] * 0.114);
+          sum += l; sq += l * l;
+        }
+        const mean = sum / n;
+        const variance = Math.max(0, sq / n - mean * mean);
+        const std = Math.sqrt(variance);
+        let cls = "", txt = "";
+        if (mean < 55) { cls = "warn"; txt = "Muy oscuro"; }
+        else if (mean > 220) { cls = "warn"; txt = "Muy brillante"; }
+        else if (std < 22) { cls = "bad"; txt = "Sin contraste / movido"; }
+        else { cls = ""; txt = "Listo para escanear"; }
+        qualityBox.className = "quality " + cls;
+        qualityText.textContent = txt;
+      } catch (_) {}
+    }, 700);
+  }
+  function stopQualityLoop() {
+    if (state.qualityTimer) clearInterval(state.qualityTimer);
+    state.qualityTimer = null;
+  }
+
+  // ---------------- CAPTURE ----------------
+  async function capture() {
+    if (!state.stream || video.readyState < 2) return;
+    buzz(12);
+    const sweep = $("#sweep");
+    sweep.classList.remove("go"); void sweep.offsetWidth;
+    sweep.classList.add("go");
+
+    const w = video.videoWidth, h = video.videoHeight;
+    const c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    c.getContext("2d").drawImage(video, 0, 0, w, h);
+    state.rawCapture = c.toDataURL("image/jpeg", 0.92);
+    stopCamera();
+    openCrop();
+  }
+
+  // ---------------- CROP ----------------
+  function openCrop() {
+    cropImg.src = state.rawCapture;
+    // reset crop
+    state.crop = { x1: 0.06, y1: 0.06, x2: 0.94, y2: 0.94 };
+    cropImg.onload = () => {
+      requestAnimationFrame(() => {
+        layoutHandles();
+        drawCropRect();
+      });
+    };
+    show("crop");
+  }
+  function drawCropRect() {
+    const r = cropWrap.getBoundingClientRect();
+    const { x1, y1, x2, y2 } = state.crop;
+    cropRect.style.left   = (x1 * 100) + "%";
+    cropRect.style.top    = (y1 * 100) + "%";
+    cropRect.style.width  = ((x2 - x1) * 100) + "%";
+    cropRect.style.height = ((y2 - y1) * 100) + "%";
+  }
+  function layoutHandles() {
+    const handles = cropWrap.querySelectorAll(".handle");
+    const map = { tl: [state.crop.x1, state.crop.y1],
+                  tr: [state.crop.x2, state.crop.y1],
+                  br: [state.crop.x2, state.crop.y2],
+                  bl: [state.crop.x1, state.crop.y2] };
+    handles.forEach((h) => {
+      const [x, y] = map[h.dataset.h];
+      h.style.left = (x * 100) + "%";
+      h.style.top  = (y * 100) + "%";
+    });
+  }
+
+  // Drag con Pointer Events (mouse + touch unificados)
+  function setupDrag() {
+    cropWrap.addEventListener("pointerdown", (e) => {
+      const h = e.target.closest(".handle");
+      if (!h) return;
+      e.preventDefault();
+      state.dragging = h.dataset.h;
+      h.setPointerCapture(e.pointerId);
+    });
+    cropWrap.addEventListener("pointermove", (e) => {
+      if (!state.dragging) return;
+      e.preventDefault();
+      const r = cropWrap.getBoundingClientRect();
+      let nx = (e.clientX - r.left) / r.width;
+      let ny = (e.clientY - r.top) / r.height;
+      nx = Math.max(0, Math.min(1, nx));
+      ny = Math.max(0, Math.min(1, ny));
+      const c = state.crop;
+      const min = 0.08; // evita colapso
+      if (state.dragging === "tl") { c.x1 = Math.min(nx, c.x2 - min); c.y1 = Math.min(ny, c.y2 - min); }
+      if (state.dragging === "tr") { c.x2 = Math.max(nx, c.x1 + min); c.y1 = Math.min(ny, c.y2 - min); }
+      if (state.dragging === "br") { c.x2 = Math.max(nx, c.x1 + min); c.y2 = Math.max(ny, c.y1 + min); }
+      if (state.dragging === "bl") { c.x1 = Math.min(nx, c.x2 - min); c.y2 = Math.max(ny, c.y1 + min); }
+      layoutHandles();
+      drawCropRect();
+    });
+    cropWrap.addEventListener("pointerup", () => { state.dragging = null; });
+    cropWrap.addEventListener("pointercancel", () => { state.dragging = null; });
+  }
+  setupDrag();
+
+  // ---------------- FILTERS (real, sobre píxeles) ----------------
+  function applyFilterToCanvas(srcCanvas, filterId) {
+    const c = document.createElement("canvas");
+    c.width = srcCanvas.width; c.height = srcCanvas.height;
+    const ctx = c.getContext("2d");
+    ctx.drawImage(srcCanvas, 0, 0);
+    if (filterId === "original") return c;
+    const img = ctx.getImageData(0, 0, c.width, c.height);
+    const d = img.data;
+
+    if (filterId === "bw") {
+      // Grayscale + contraste agresivo + corte de blancos
+      for (let i = 0; i < d.length; i += 4) {
+        let v = d[i] * 0.299 + d[i+1] * 0.587 + d[i+2] * 0.114;
+        v = (v - 128) * 1.9 + 138;
+        v = v < 70 ? 0 : v > 195 ? 255 : v;
+        d[i] = d[i+1] = d[i+2] = v;
+      }
+    } else if (filterId === "gray") {
+      // Gris + suavizado + leve contraste
+      for (let i = 0; i < d.length; i += 4) {
+        let v = d[i] * 0.299 + d[i+1] * 0.587 + d[i+2] * 0.114;
+        v = (v - 128) * 1.35 + 140;
+        d[i] = d[i+1] = d[i+2] = Math.max(0, Math.min(255, v));
+      }
+    } else if (filterId === "auto") {
+      // Color: contraste + blanqueo de fondo
+      for (let i = 0; i < d.length; i += 4) {
+        let r = d[i], g = d[i+1], b = d[i+2];
+        // Normalizar cada canal
+        r = (r - 128) * 1.35 + 142;
+        g = (g - 128) * 1.35 + 142;
+        b = (b - 128) * 1.35 + 142;
+        // Empujar claros hacia blanco
+        if (r > 200) r = 255;
+        if (g > 200) g = 255;
+        if (b > 200) b = 255;
+        d[i]   = Math.max(0, Math.min(255, r));
+        d[i+1] = Math.max(0, Math.min(255, g));
+        d[i+2] = Math.max(0, Math.min(255, b));
+      }
+    } else if (filterId === "color") {
+      for (let i = 0; i < d.length; i += 4) {
+        d[i]   = Math.max(0, Math.min(255, (d[i]   - 128) * 1.15 + 132));
+        d[i+1] = Math.max(0, Math.min(255, (d[i+1] - 128) * 1.15 + 132));
+        d[i+2] = Math.max(0, Math.min(255, (d[i+2] - 128) * 1.15 + 132));
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    return c;
+  }
+
+  // Crop + devuelve canvas
+  async function buildCroppedCanvas() {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const sw = img.naturalWidth, sh = img.naturalHeight;
+        const { x1, y1, x2, y2 } = state.crop;
+        const cw = Math.round((x2 - x1) * sw);
+        const ch = Math.round((y2 - y1) * sh);
+        const c = document.createElement("canvas");
+        c.width = cw; c.height = ch;
+        c.getContext("2d").drawImage(
+          img,
+          Math.round(x1 * sw), Math.round(y1 * sh), cw, ch,
+          0, 0, cw, ch
+        );
+        resolve(c);
+      };
+      img.src = state.rawCapture;
+    });
+  }
+
+  function renderFilterPreview(filterId) {
+    const img = new Image();
+    img.onload = () => {
+      const base = document.createElement("canvas");
+      base.width = img.naturalWidth; base.height = img.naturalHeight;
+      base.getContext("2d").drawImage(img, 0, 0);
+      const out = applyFilterToCanvas(base, filterId);
+      filtersImg.src = out.toDataURL("image/jpeg", 0.88);
+    };
+    img.src = state.cropped;
+  }
+
+  function buildFilterRail() {
+    const rail = $("#filterRail");
+    rail.innerHTML = "";
+    FILTERS.forEach((f) => {
+      const btn = document.createElement("button");
+      btn.className = "filter-pill" + (f.id === state.currentFilter ? " on" : "");
+      btn.dataset.id = f.id;
+      btn.innerHTML = `<div class="swatch"></div><span>${f.label}</span>`;
+      btn.addEventListener("click", () => {
+        state.currentFilter = f.id;
+        rail.querySelectorAll(".filter-pill").forEach((p) =>
+          p.classList.toggle("on", p.dataset.id === f.id));
+        renderFilterPreview(f.id);
+        buzz();
+      });
+      rail.appendChild(btn);
+    });
+    // Generar miniaturas reales
+    requestAnimationFrame(() => {
+      FILTERS.forEach((f) => {
+        const pill = rail.querySelector(`[data-id="${f.id}"] .swatch`);
+        if (!pill) return;
+        const img = new Image();
+        img.onload = () => {
+          const base = document.createElement("canvas");
+          const size = 100;
+          base.width = size; base.height = size;
+          const ctx = base.getContext("2d");
+          // Cover-fit
+          const ratio = Math.max(size / img.naturalWidth, size / img.naturalHeight);
+          const dw = img.naturalWidth * ratio, dh = img.naturalHeight * ratio;
+          ctx.drawImage(img, (size - dw) / 2, (size - dh) / 2, dw, dh);
+          const out = applyFilterToCanvas(base, f.id);
+          pill.replaceChildren(out);
+          const outImg = new Image();
+          outImg.src = out.toDataURL("image/jpeg", 0.7);
+          outImg.style.width = "100%"; outImg.style.height = "100%";
+          outImg.style.objectFit = "cover"; outImg.style.display = "block";
+          pill.replaceChildren(outImg);
+        };
+        img.src = state.cropped;
+      });
+    });
+  }
+
+  // Compare original vs filtro (press & hold)
+  function setupCompare() {
+    const stage = document.querySelector(".filters-stage");
+    let originalSrc = null;
+    const onDown = () => {
+      originalSrc = filtersImg.src;
+      filtersImg.src = state.cropped;
+      $("#compareHint").style.opacity = "0";
+    };
+    const onUp = () => {
+      if (originalSrc) filtersImg.src = originalSrc;
+      $("#compareHint").style.opacity = "";
+    };
+    stage.addEventListener("pointerdown", onDown);
+    stage.addEventListener("pointerup", onUp);
+    stage.addEventListener("pointercancel", onUp);
+    stage.addEventListener("pointerleave", onUp);
+  }
+  setupCompare();
+
+  // ---------------- PDF ----------------
+  async function buildPDF() {
+    if (!state.pages.length) throw new Error("Sin páginas");
+    if (!window.PDFLib) throw new Error("pdf-lib aún cargando, esperá un segundo…");
+    const { PDFDocument } = window.PDFLib;
+    const pdf = await PDFDocument.create();
+    pdf.setTitle("OMG Scan · " + new Date().toLocaleDateString("es"));
+    pdf.setCreator("OMG Scan by Ohmygoch");
+    pdf.setProducer("OMG Scan");
+
+    for (const page of state.pages) {
+      const bytes = new Uint8Array(await dataURLtoBlob(page.dataURL).arrayBuffer());
+      const img = await pdf.embedJpg(bytes);
+      // A4 en puntos
+      const A4 = [595.28, 841.89];
+      const pageRef = pdf.addPage(A4);
+      const margin = 20;
+      const maxW = A4[0] - margin * 2;
+      const maxH = A4[1] - margin * 2;
+      const ratio = Math.min(maxW / img.width, maxH / img.height);
+      const w = img.width * ratio;
+      const h = img.height * ratio;
+      pageRef.drawImage(img, {
+        x: (A4[0] - w) / 2,
+        y: (A4[1] - h) / 2,
+        width: w, height: h,
+      });
+    }
+    return await pdf.save();
+  }
+  function downloadPDF(bytes, name) {
+    const blob = new Blob([bytes], { type: "application/pdf" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }
+  async function sharePDF(bytes) {
+    const file = new File([bytes], "omg-scan.pdf", { type: "application/pdf" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: "OMG Scan", text: "Escaneo OMG" });
+        return true;
+      } catch (e) { return false; }
+    }
+    return false;
+  }
+
+  // ---------------- FLOW ----------------
+  async function goToFilters() {
+    const canvas = await buildCroppedCanvas();
+    state.cropped = canvas.toDataURL("image/jpeg", 0.92);
+    state.currentFilter = "auto";
+    show("filters");
+    buildFilterRail();
+    renderFilterPreview("auto");
+  }
+
+  function commitPage() {
+    const img = new Image();
+    img.onload = () => {
+      const base = document.createElement("canvas");
+      base.width = img.naturalWidth; base.height = img.naturalHeight;
+      base.getContext("2d").drawImage(img, 0, 0);
+      const out = applyFilterToCanvas(base, state.currentFilter);
+      state.pages.push({ dataURL: out.toDataURL("image/jpeg", 0.9) });
+      updateDone();
+      show("done");
+      buzz(14);
+    };
+    img.src = state.cropped;
+  }
+
+  function updateDone() {
+    const n = state.pages.length;
+    $("#doneSub").textContent = n === 1 ? "1 página lista para exportar"
+                                        : `${n} páginas listas para exportar`;
+  }
+
+  // ---------------- EVENTS ----------------
+  $("#btnStart").addEventListener("click", async () => {
+    show("camera");
+    await startCamera();
+  });
+
+  $("#btnClose").addEventListener("click", () => {
+    stopCamera();
+    show("home");
+  });
+  $("#btnFlash").addEventListener("click", toggleFlash);
+  $("#btnSwitch").addEventListener("click", async () => {
+    state.facing = state.facing === "environment" ? "user" : "environment";
+    await startCamera();
+  });
+  $("#btnShutter").addEventListener("click", capture);
+  $("#btnGallery").addEventListener("click", () => $("#fileInput").click());
+  $("#fileInput").addEventListener("change", (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    const r = new FileReader();
+    r.onload = () => {
+      state.rawCapture = r.result;
+      stopCamera();
+      openCrop();
+    };
+    r.readAsDataURL(f);
+    e.target.value = "";
+  });
+
+  $("#cropCancel").addEventListener("click", async () => {
+    show("camera");
+    await startCamera();
+  });
+  $("#cropFull").addEventListener("click", () => {
+    state.crop = { x1: 0, y1: 0, x2: 1, y2: 1 };
+    layoutHandles(); drawCropRect();
+  });
+  $("#cropReset").addEventListener("click", () => {
+    state.crop = { x1: 0.06, y1: 0.06, x2: 0.94, y2: 0.94 };
+    layoutHandles(); drawCropRect();
+  });
+  $("#cropNext").addEventListener("click", goToFilters);
+
+  $("#filtersBack").addEventListener("click", () => {
+    show("crop");
+    requestAnimationFrame(() => { layoutHandles(); drawCropRect(); });
+  });
+  $("#filtersAdd").addEventListener("click", commitPage);
+
+  $("#btnPdf").addEventListener("click", async () => {
+    try {
+      showToast("Generando PDF…");
+      const bytes = await buildPDF();
+      const name = "OMG-Scan-" + new Date().toISOString().slice(0, 10) + ".pdf";
+      downloadPDF(bytes, name);
+      showToast("PDF descargado ✓");
+      buzz(20);
+    } catch (e) {
+      console.error(e);
+      showToast(e.message || "Error al generar PDF");
+    }
+  });
+  $("#btnShare").addEventListener("click", async () => {
+    try {
+      const bytes = await buildPDF();
+      const ok = await sharePDF(bytes);
+      if (!ok) {
+        downloadPDF(bytes, "OMG-Scan.pdf");
+        showToast("PDF descargado (compartir no disponible)");
+      }
+    } catch (e) {
+      showToast(e.message || "Error al compartir");
+    }
+  });
+  $("#btnNew").addEventListener("click", async () => {
+    state.pages = [];
+    state.rawCapture = null;
+    state.cropped = null;
+    updateDone();
+    show("camera");
+    await startCamera();
+  });
+
+  // ---------------- MISC ----------------
+  window.addEventListener("resize", () => {
+    if (views.crop.classList.contains("active")) {
+      layoutHandles(); drawCropRect();
+    }
+  });
+  window.addEventListener("orientationchange", () => setTimeout(() => {
+    if (views.crop.classList.contains("active")) {
+      layoutHandles(); drawCropRect();
+    }
+  }, 250));
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden && state.stream) {
+      // pausa cámara al ir a background (iOS)
+      state.stream.getVideoTracks().forEach(t => t.enabled = false);
+    } else if (!document.hidden && state.stream) {
+      state.stream.getVideoTracks().forEach(t => t.enabled = true);
+    }
+  });
+
+  // Install prompt (Android/Chrome)
+  let deferredPrompt = null;
+  window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    // podríamos mostrar un chip "Instalar" — MVP: log silencioso
+  });
+  // iOS no dispara beforeinstallprompt, mostramos hint si están en Safari sin instalar
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const isStandalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone;
+  if (isIOS && !isStandalone) {
+    setTimeout(() => showToast("Tip: Compartir → Añadir a pantalla de inicio", 3500), 1500);
+  }
+})();
+</script>
+</body>
+</html>
