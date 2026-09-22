@@ -648,6 +648,27 @@
     box-shadow:0 12px 40px rgba(0,0,0,.5);max-width:90vw;text-align:center
   }
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  /* OCR: confianza + reintentar */
+  .ocr-confidence{
+    display:none;align-items:center;gap:10px;
+    background:var(--card);border:1px solid var(--stroke);
+    border-radius:999px;padding:8px 16px;font-size:13px
+  }
+  .ocr-confidence.show{display:inline-flex}
+  .ocr-conf-label{color:var(--muted);font-weight:600}
+  .ocr-conf-value{
+    font-family:ui-monospace,monospace;font-weight:800;
+    font-variant-numeric:tabular-nums;font-size:14px
+  }
+  .ocr-confidence.good .ocr-conf-value{color:var(--laser)}
+  .ocr-confidence.medium .ocr-conf-value{color:#FFB020}
+  .ocr-confidence.bad .ocr-conf-value{color:var(--coral)}
+  .ocr-subline{
+    font-size:12px;color:var(--muted);text-align:center;
+    max-width:340px;line-height:1.4
+  }
+  
 </style>
 </head>
 <body>
@@ -949,10 +970,16 @@
   <div class="ocr-title" id="ocrTitle">Extrayendo texto…</div>
   <div class="ocr-status" id="ocrStatus">Cargando motor…</div>
   <div class="ocr-bar"><i id="ocrBarFill"></i></div>
+  <div class="ocr-confidence" id="ocrConfidence">
+    <span class="ocr-conf-label">Confianza promedio</span>
+    <span class="ocr-conf-value" id="ocrConfValue">—</span>
+  </div>
+  <div class="ocr-subline" id="ocrSubline" style="display:none"></div>
   <textarea class="ocr-text" id="ocrText" style="display:none" readonly></textarea>
   <div class="ocr-actions" id="ocrActions" style="display:none">
     <button class="btn ghost" id="ocrCopy">📋 Copiar</button>
     <button class="btn ghost" id="ocrShare">📤 Compartir texto</button>
+    <button class="btn ghost" id="ocrRetry" style="display:none">🔁 Reintentar mejor</button>
     <button class="btn primary" id="ocrClose">Listo</button>
   </div>
 </div>
@@ -2969,7 +2996,7 @@
   }
 
   /* =========================================================
-     OCR
+     OCR — con preprocessing adaptativo
      ========================================================= */
   const ocrOverlay = $("#ocrOverlay");
   const ocrTitle = $("#ocrTitle");
@@ -2978,9 +3005,15 @@
   const ocrText = $("#ocrText");
   const ocrActions = $("#ocrActions");
   const ocrRing = $("#ocrRing");
+  const ocrConfidence = $("#ocrConfidence");
+  const ocrConfValue = $("#ocrConfValue");
+  const ocrSubline = $("#ocrSubline");
+  const ocrRetryBtn = $("#ocrRetry");
 
   const TESSERACT_URL = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
   let tesseractPromise = null;
+  let ocrWorker = null;
+  let lastOCRData = null; // { dataURLs, docName }
 
   function ensureTesseract({ silent = false, trackPreload = null } = {}) {
     if (tesseractPromise) return tesseractPromise;
@@ -3003,6 +3036,7 @@
     });
     return tesseractPromise;
   }
+
   async function preloadTesseract() {
     try {
       await ensureTesseract({ silent: true, trackPreload: "tesseract" });
@@ -3013,65 +3047,264 @@
     }
     updatePreloadChip();
   }
-  async function runOCR(dataURLs, docName = "") {
+
+  /* --------- Preprocessing para OCR ---------
+     Pipeline:
+      1. Convertir a gris
+      2. Detectar inversión (fondo oscuro) por mediana → invertir si hace falta
+      3. Umbral adaptativo Bradley con integral image
+      4. Devolver canvas binario listo para Tesseract
+  */
+  function preprocessForOCR(srcCanvas, { mode = "normal" } = {}) {
+    const w = srcCanvas.width, h = srcCanvas.height;
+    const sctx = srcCanvas.getContext("2d", { willReadFrequently: true });
+    const src = sctx.getImageData(0, 0, w, h).data;
+    const gray = new Uint8Array(w * h);
+
+    // 1. Grayscale
+    const hist = new Uint32Array(256);
+    for (let i = 0, j = 0; i < src.length; i += 4, j++) {
+      const v = (src[i] * 0.299 + src[i+1] * 0.587 + src[i+2] * 0.114) | 0;
+      gray[j] = v;
+      hist[v]++;
+    }
+
+    // 2. Detectar inversión por mediana
+    let acc = 0, median = 128;
+    const half = gray.length / 2;
+    for (let v = 0; v < 256; v++) {
+      acc += hist[v];
+      if (acc >= half) { median = v; break; }
+    }
+    if (median < 110) {
+      // Fondo oscuro (dark mode) → invertir
+      for (let i = 0; i < gray.length; i++) gray[i] = 255 - gray[i];
+    }
+
+    // 3. Umbral adaptativo Bradley con integral image
+    const integral = new Uint32Array((w + 1) * (h + 1));
+    for (let y = 0; y < h; y++) {
+      let rowSum = 0;
+      const rowBase = (y + 1) * (w + 1);
+      const prevBase = y * (w + 1);
+      for (let x = 0; x < w; x++) {
+        rowSum += gray[y * w + x];
+        integral[rowBase + (x + 1)] = integral[prevBase + (x + 1)] + rowSum;
+      }
+    }
+
+    const minDim = Math.min(w, h);
+    const windowSize = mode === "aggressive"
+      ? clamp(Math.round(minDim / 60), 10, 70)
+      : clamp(Math.round(minDim / 40), 15, 90);
+    const tolerance = mode === "aggressive" ? 0.20 : 0.15;
+    const halfWin = Math.floor(windowSize / 2);
+
+    const out = new Uint8ClampedArray(w * h * 4);
+    for (let y = 0; y < h; y++) {
+      const y1 = Math.max(0, y - halfWin);
+      const y2 = Math.min(h - 1, y + halfWin);
+      const rowTop = y1 * (w + 1);
+      const rowBot = (y2 + 1) * (w + 1);
+      for (let x = 0; x < w; x++) {
+        const x1 = Math.max(0, x - halfWin);
+        const x2 = Math.min(w - 1, x + halfWin);
+        const count = (x2 - x1 + 1) * (y2 - y1 + 1);
+        const sum = integral[rowBot + (x2 + 1)]
+                  - integral[rowTop + (x2 + 1)]
+                  - integral[rowBot + x1]
+                  + integral[rowTop + x1];
+        const mean = sum / count;
+        const v = gray[y * w + x];
+        const bin = v < mean * (1 - tolerance) ? 0 : 255;
+        const i4 = (y * w + x) * 4;
+        out[i4] = out[i4+1] = out[i4+2] = bin;
+        out[i4+3] = 255;
+      }
+    }
+
+    const dst = document.createElement("canvas");
+    dst.width = w; dst.height = h;
+    dst.getContext("2d").putImageData(new ImageData(out, w, h), 0, 0);
+    return dst;
+  }
+
+  /* --------- Preparar canvas para OCR (resize + preprocessing) --------- */
+  function prepareForOCR(dataURL, { mode = "normal" } = {}) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const nw = img.naturalWidth, nh = img.naturalHeight;
+
+        // Redimensionar a un tamaño ideal para Tesseract
+        // Apuntamos a ~1600-2400px de ancho — sweet spot para OCR en móvil
+        const targetW = 2000;
+        let scale = 1;
+        if (nw < 1400) scale = Math.min(2, targetW / nw); // upscale si es chica
+        else if (nw > 2600) scale = targetW / nw;          // downscale si es enorme
+        const w = Math.round(nw * scale);
+        const h = Math.round(nh * scale);
+
+        const c = document.createElement("canvas");
+        c.width = w; c.height = h;
+        const ctx = c.getContext("2d", { willReadFrequently: true });
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+        ctx.drawImage(img, 0, 0, w, h);
+
+        try {
+          const processed = preprocessForOCR(c, { mode });
+          resolve(processed);
+        } catch (e) {
+          console.warn("[preprocess] Falló, usando imagen cruda:", e.message);
+          resolve(c);
+        }
+      };
+      img.onerror = () => reject(new Error("No se pudo cargar la imagen para OCR"));
+      img.src = dataURL;
+    });
+  }
+
+  /* --------- Worker persistente --------- */
+  async function getOCRWorker(logger) {
+    if (ocrWorker) {
+      // re-set el logger si cambió
+      return ocrWorker;
+    }
+    const Tesseract = await ensureTesseract({ silent: false });
+    ocrWorker = await Tesseract.createWorker(["spa", "eng"], 1, { logger });
+    return ocrWorker;
+  }
+
+  async function configureOCRWorker(worker, { mode = "normal" } = {}) {
+    const params = {
+      preserve_interword_spaces: "1",
+      user_defined_dpi: "300",
+      // PSM 3 = auto (default). PSM 6 = uniform block.
+      tessedit_pageseg_mode: mode === "aggressive" ? "6" : "3",
+      // Ayuda con tablas
+      textord_tablefind_recognize_tables: "1",
+      textord_tabfind_find_tables: "1",
+    };
+    try { await worker.setParameters(params); } catch (_) {}
+  }
+
+  /* --------- runOCR principal --------- */
+  async function runOCR(dataURLs, docName = "", { mode = "normal", isRetry = false } = {}) {
     ocrOverlay.classList.add("show");
     ocrRing.style.display = "";
     ocrText.style.display = "none";
     ocrText.value = "";
     ocrActions.style.display = "none";
-    ocrTitle.textContent = "Extrayendo texto…";
-    ocrStatus.textContent = "Cargando motor OCR…";
+    ocrConfidence.classList.remove("show", "good", "medium", "bad");
+    ocrSubline.style.display = "none";
+    ocrRetryBtn.style.display = "none";
+
+    ocrTitle.textContent = isRetry ? "Reintentando con más agresividad…" : "Extrayendo texto…";
+    ocrStatus.textContent = "Preparando imágenes…";
     ocrBarFill.style.width = "0%";
+
+    if (!isRetry) lastOCRData = { dataURLs: [...dataURLs], docName };
+
+    let totalProgress = 0;
+    const progressPerPage = 1 / dataURLs.length;
+
     try {
-      const Tesseract = await ensureTesseract({ silent: false });
-      ocrStatus.textContent = "Cargando idioma (español + inglés)…";
-      const worker = await Tesseract.createWorker(["spa", "eng"], 1, {
-        logger: (m) => {
-          if (m.status === "recognizing text") {
-            const pct = Math.round((m.progress || 0) * 100);
-            ocrBarFill.style.width = pct + "%";
-            ocrStatus.textContent = `Reconociendo… ${pct}%`;
-            return;
-          }
-          if (m.status === "loading language traineddata") {
-            const pct = Math.round((m.progress || 0) * 100);
-            ocrStatus.textContent = `Descargando idioma… ${pct}% (solo la primera vez)`;
-            ocrBarFill.style.width = pct + "%";
-            return;
-          }
-          if (m.status === "initializing api") {
-            ocrStatus.textContent = "Inicializando OCR…";
-            return;
-          }
-          if (m.status) {
-            ocrStatus.textContent = m.status.charAt(0).toUpperCase() + m.status.slice(1) + "…";
-          }
-        },
-      });
-      const full = [];
+      const logger = (m) => {
+        if (m.status === "recognizing text") {
+          const inner = m.progress || 0;
+          const overall = (totalProgress + inner * progressPerPage) * 100;
+          ocrBarFill.style.width = Math.round(overall) + "%";
+          ocrStatus.textContent = `Reconociendo… ${Math.round(overall)}%`;
+          return;
+        }
+        if (m.status === "loading language traineddata") {
+          const pct = Math.round((m.progress || 0) * 100);
+          ocrStatus.textContent = `Cargando idioma… ${pct}% (solo la primera vez)`;
+          return;
+        }
+        if (m.status === "initializing api") {
+          ocrStatus.textContent = "Inicializando OCR…";
+        }
+      };
+
+      const worker = await getOCRWorker(logger);
+      await configureOCRWorker(worker, { mode });
+
+      const fullText = [];
+      const confidences = [];
+
       for (let i = 0; i < dataURLs.length; i++) {
+        ocrStatus.textContent = `Preparando página ${i + 1} de ${dataURLs.length}…`;
+        const prepared = await prepareForOCR(dataURLs[i], { mode });
+        const preparedURL = prepared.toDataURL("image/jpeg", 0.92);
+
         ocrStatus.textContent = `Página ${i + 1} de ${dataURLs.length}…`;
-        const { data: { text } } = await worker.recognize(dataURLs[i]);
-        full.push(text.trim());
+        const { data } = await worker.recognize(preparedURL);
+        fullText.push((data.text || "").trim());
+
+        // Confianza: usar data.confidence si existe (avg), sino el promedio de words
+        let conf = typeof data.confidence === "number" ? data.confidence : null;
+        if (conf == null && Array.isArray(data.words) && data.words.length) {
+          const sum = data.words.reduce((a, w) => a + (w.confidence || 0), 0);
+          conf = sum / data.words.length;
+        }
+        if (conf != null && isFinite(conf)) confidences.push(conf);
+
+        totalProgress += progressPerPage;
+        ocrBarFill.style.width = Math.round(totalProgress * 100) + "%";
       }
-      await worker.terminate();
-      const out = full.join("\n\n———\n\n");
+
+      const out = fullText.join("\n\n———\n\n");
+      const avgConf = confidences.length
+        ? Math.round(confidences.reduce((a, b) => a + b, 0) / confidences.length)
+        : null;
+
       ocrRing.style.display = "none";
       ocrTitle.textContent = "Texto extraído";
       ocrStatus.textContent = `${out.length} caracteres · ${dataURLs.length} página(s)`;
       ocrBarFill.style.width = "100%";
+
+      // Mostrar confianza
+      if (avgConf != null) {
+        ocrConfValue.textContent = avgConf + "%";
+        ocrConfidence.classList.add("show");
+        if (avgConf >= 80) ocrConfidence.classList.add("good");
+        else if (avgConf >= 60) ocrConfidence.classList.add("medium");
+        else ocrConfidence.classList.add("bad");
+
+        // Subline de diagnóstico + botón retry
+        if (avgConf < 60 && !isRetry) {
+          ocrSubline.textContent = "La confianza es baja. Podés reintentar con un procesado más agresivo.";
+          ocrSubline.style.display = "";
+          ocrRetryBtn.style.display = "";
+        } else if (avgConf < 60 && isRetry) {
+          ocrSubline.textContent = "El resultado sigue siendo bajo. Probá con una foto más nítida o mejor iluminada.";
+          ocrSubline.style.display = "";
+        }
+      }
+
       ocrText.value = out || "(sin texto reconocible)";
       ocrText.style.display = "";
       ocrActions.style.display = "";
       buzz(20);
     } catch (e) {
-      console.error(e);
+      console.error("[OCR]", e);
       ocrRing.style.display = "none";
       ocrTitle.textContent = "No pudimos extraer texto";
       ocrStatus.textContent = e.message || "Error desconocido";
       setTimeout(() => ocrOverlay.classList.remove("show"), 2400);
     }
   }
+
+  /* --------- Retry --------- */
+  ocrRetryBtn.addEventListener("click", async () => {
+    if (!lastOCRData) return;
+    ocrRetryBtn.style.display = "none";
+    await runOCR(lastOCRData.dataURLs, lastOCRData.docName, { mode: "aggressive", isRetry: true });
+  });
+
+  /* --------- Wire --------- */
   $("#ocrClose").addEventListener("click", () => ocrOverlay.classList.remove("show"));
   $("#ocrCopy").addEventListener("click", async () => {
     try {
