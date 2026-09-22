@@ -136,7 +136,7 @@
   .sweep.go{animation:sweep .55s ease-out}
   @keyframes sweep{0%{top:0;opacity:1}100%{top:100%;opacity:0}}
 
-  /* ============ CROP ============ */
+  /* ============ CROP (quadrilateral) ============ */
   #crop{background:#000;overflow:hidden}
   .crop-stage{
     position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
@@ -148,15 +148,35 @@
     transform-origin:center center;transition:transform .12s ease-out;
     will-change:transform
   }
-  .crop-wrap img{display:block;max-width:100%;max-height:100%;border-radius:6px;pointer-events:none;transition:opacity .15s}
-  .crop-rect{position:absolute;border:2px solid var(--laser);
-    box-shadow:0 0 24px rgba(200,255,46,.35),0 0 0 1px rgba(0,0,0,.35);
-    pointer-events:none;border-radius:4px}
-  .handle{position:absolute;width:46px;height:46px;margin:-23px;
-    display:flex;align-items:center;justify-content:center;touch-action:none;cursor:grab}
-  .handle::before{content:"";width:20px;height:20px;border-radius:50%;
+  .crop-wrap img{display:block;max-width:100%;max-height:100%;border-radius:6px;
+    pointer-events:none;transition:opacity .15s}
+  .crop-svg{
+    position:absolute;inset:0;width:100%;height:100%;
+    pointer-events:none;overflow:visible
+  }
+  .crop-svg .dark-out{
+    fill:rgba(0,0,0,.72);pointer-events:none
+  }
+  .crop-svg .poly{
+    fill:none;stroke:var(--laser);stroke-width:2.5;
+    vector-effect:non-scaling-stroke;
+    filter:drop-shadow(0 0 10px rgba(200,255,46,.5));
+    pointer-events:none
+  }
+  .crop-handle{
+    position:absolute;width:46px;height:46px;margin:-23px;
+    display:flex;align-items:center;justify-content:center;
+    touch-action:none;cursor:grab;z-index:10
+  }
+  .crop-handle::before{
+    content:"";width:20px;height:20px;border-radius:50%;
     background:var(--laser);border:2px solid #fff;
-    box-shadow:0 4px 14px rgba(0,0,0,.4)}
+    box-shadow:0 4px 14px rgba(0,0,0,.4);
+    transition:transform .12s, background .12s
+  }
+  .crop-handle.active::before{
+    transform:scale(1.35);background:#fff;border-color:var(--laser)
+  }
   .crop-bar{
     position:absolute;bottom:calc(env(safe-area-inset-bottom) + 20px);left:0;right:0;
     display:flex;justify-content:center;gap:10px;padding:0 16px;z-index:5;flex-wrap:wrap
@@ -174,10 +194,8 @@
   .btn.laser{background:rgba(200,255,46,.14);border-color:rgba(200,255,46,.4);color:var(--laser)}
   .btn:disabled{opacity:.4;pointer-events:none}
   .btn.sm{padding:10px 14px;font-size:13px;border-radius:12px}
-  .btn.cargando{background:rgba(108,77,255,.2);border-color:rgba(108,77,255,.5);color:#c5b8ff;
-    pointer-events:none}
-  .btn.fallado{background:rgba(255,90,95,.12);border-color:rgba(255,90,95,.35);color:#ffb1b3;
-    pointer-events:none}
+  .btn.cargando{background:rgba(108,77,255,.2);border-color:rgba(108,77,255,.5);color:#c5b8ff}
+  .btn.fallado{background:rgba(255,90,95,.12);border-color:rgba(255,90,95,.35);color:#ffb1b3}
   .top-bar{
     position:absolute;top:calc(env(safe-area-inset-top) + 10px);left:0;right:0;
     display:flex;justify-content:space-between;align-items:center;padding:0 16px;z-index:6
@@ -594,7 +612,7 @@
       <span class="count" id="libCount" style="display:none">0</span>
     </button>
 
-    <div class="hint">by Ohmygoch · v1.4.0</div>
+    <div class="hint">by Ohmygoch · v1.5.0</div>
   </section>
 
   <!-- ============== CAMERA ============== -->
@@ -665,18 +683,21 @@
     <div class="crop-stage" id="cropStage">
       <div class="crop-wrap" id="cropWrap">
         <img id="cropImg" alt="" />
-        <div class="crop-rect" id="cropRect"></div>
-        <div class="handle" data-h="tl"></div>
-        <div class="handle" data-h="tr"></div>
-        <div class="handle" data-h="br"></div>
-        <div class="handle" data-h="bl"></div>
+        <svg class="crop-svg" id="cropSvg" viewBox="0 0 1 1" preserveAspectRatio="none">
+          <path id="cropDark" class="dark-out" d="" fill-rule="evenodd"/>
+          <polygon id="cropPoly" class="poly" points=""/>
+        </svg>
+        <div class="crop-handle" data-i="0"></div>
+        <div class="crop-handle" data-i="1"></div>
+        <div class="crop-handle" data-i="2"></div>
+        <div class="crop-handle" data-i="3"></div>
       </div>
     </div>
     <div class="crop-hint" id="cropHint">Pellizcá para zoom · arrastrá las esquinas</div>
     <div class="crop-bar">
       <button class="btn ghost sm" id="cropFull">Usar todo</button>
       <button class="btn laser sm" id="cropAuto">⏳ Preparando IA…</button>
-      <button class="btn primary" id="cropNext">Aplicar</button>
+      <button class="btn primary" id="cropNext">✨ Aplicar</button>
     </div>
   </section>
 
@@ -905,6 +926,153 @@
   function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
 
   /* =========================================================
+     PERSPECTIVE WARP (homografía 3x3)
+     ========================================================= */
+  // Resuelve sistema lineal A·x = b por eliminación gaussiana (n=8)
+  function solveLinearSystem(A, b) {
+    const n = A.length;
+    const M = A.map((row, i) => [...row, b[i]]);
+    for (let i = 0; i < n; i++) {
+      // Pivote
+      let maxRow = i;
+      for (let k = i + 1; k < n; k++) {
+        if (Math.abs(M[k][i]) > Math.abs(M[maxRow][i])) maxRow = k;
+      }
+      if (maxRow !== i) [M[i], M[maxRow]] = [M[maxRow], M[i]];
+      if (Math.abs(M[i][i]) < 1e-10) throw new Error("Sistema singular");
+      // Eliminación
+      for (let k = i + 1; k < n; k++) {
+        const f = M[k][i] / M[i][i];
+        for (let j = i; j <= n; j++) M[k][j] -= f * M[i][j];
+      }
+    }
+    // Sustitución hacia atrás
+    const x = new Array(n).fill(0);
+    for (let i = n - 1; i >= 0; i--) {
+      let s = M[i][n];
+      for (let j = i + 1; j < n; j++) s -= M[i][j] * x[j];
+      x[i] = s / M[i][i];
+    }
+    return x;
+  }
+
+  // Calcula la homografía H que mapea los puntos destino (0,0),(W,0),(W,H),(0,H)
+  // a los puntos origen pts[0..3]. Devuelve [h11,h12,h13,h21,h22,h23,h31,h32,h33] con h33=1.
+  // Nota: mapea DST → SRC para poder recorrer el destino hacia atrás (inverse mapping).
+  function computeHomography(dstPoints, srcPoints) {
+    // dstPoints: esquinas del rect destino [(0,0),(W,0),(W,H),(0,H)]
+    // srcPoints: esquinas del polígono origen (en la imagen fuente)
+    const A = [];
+    const b = [];
+    for (let i = 0; i < 4; i++) {
+      const { x, y } = dstPoints[i];
+      const { x: u, y: v } = srcPoints[i];
+      A.push([x, y, 1, 0, 0, 0, -x * u, -y * u]); b.push(u);
+      A.push([0, 0, 0, x, y, 1, -x * v, -y * v]); b.push(v);
+    }
+    const h = solveLinearSystem(A, b);
+    return [...h, 1];
+  }
+
+  // Warp por homografía con interpolación bilineal.
+  // srcCanvas: canvas origen
+  // corners: [{x,y},...] en coords normalizadas 0..1 de srcCanvas (TL, TR, BR, BL)
+  function warpPerspective(srcCanvas, corners) {
+    const sw = srcCanvas.width, sh = srcCanvas.height;
+
+    // Puntos origen en coords de canvas
+    const srcPts = corners.map((c) => ({ x: c.x * sw, y: c.y * sh }));
+
+    // Calcular tamaño del destino: ancho = máximo entre top y bottom, alto = máximo entre izq y der
+    const wTop  = Math.hypot(srcPts[1].x - srcPts[0].x, srcPts[1].y - srcPts[0].y);
+    const wBot  = Math.hypot(srcPts[2].x - srcPts[3].x, srcPts[2].y - srcPts[3].y);
+    const hL    = Math.hypot(srcPts[3].x - srcPts[0].x, srcPts[3].y - srcPts[0].y);
+    const hR    = Math.hypot(srcPts[2].x - srcPts[1].x, srcPts[2].y - srcPts[1].y);
+
+    const dstW = Math.max(1, Math.round(Math.max(wTop, wBot)));
+    const dstH = Math.max(1, Math.round(Math.max(hL, hR)));
+
+    // Homografía: dst(0,0)→src TL, dst(W,0)→src TR, dst(W,H)→src BR, dst(0,H)→src BL
+    const dstPts = [
+      { x: 0, y: 0 },
+      { x: dstW, y: 0 },
+      { x: dstW, y: dstH },
+      { x: 0, y: dstH },
+    ];
+    const H = computeHomography(dstPts, srcPts);
+
+    // Datos origen
+    const srcCtx = srcCanvas.getContext("2d", { willReadFrequently: true });
+    const srcData = srcCtx.getImageData(0, 0, sw, sh);
+    const srcPix = srcData.data;
+
+    // Datos destino
+    const dst = document.createElement("canvas");
+    dst.width = dstW;
+    dst.height = dstH;
+    const dstCtx = dst.getContext("2d");
+    const dstData = dstCtx.createImageData(dstW, dstH);
+    const dstPix = dstData.data;
+
+    const h0 = H[0], h1 = H[1], h2 = H[2];
+    const h3 = H[3], h4 = H[4], h5 = H[5];
+    const h6 = H[6], h7 = H[7], h8 = H[8];
+
+    let di = 0;
+    for (let y = 0; y < dstH; y++) {
+      const yh6 = y * h6;
+      const yh7 = y * h7;
+      for (let x = 0; x < dstW; x++) {
+        const denom = x * h6 + yh7 + h8;
+        const sx = (x * h0 + yh6_ + h2); // placeholder, replaced below
+        // (evitamos typos: recalculamos limpio)
+        const sxf = (h0 * x + h1 * y + h2);
+        const syf = (h3 * x + h4 * y + h5);
+        const sxn = sxf / denom;
+        const syn = syf / denom;
+
+        const x0 = sxn | 0;
+        const y0 = syn | 0;
+        const x1 = x0 + 1;
+        const y1 = y0 + 1;
+        const fx = sxn - x0;
+        const fy = syn - y0;
+        const ifx = 1 - fx;
+        const ify = 1 - fy;
+
+        if (x0 < 0 || y0 < 0 || x1 >= sw || y1 >= sh) {
+          dstPix[di] = 0; dstPix[di+1] = 0; dstPix[di+2] = 0; dstPix[di+3] = 255;
+          di += 4;
+          continue;
+        }
+
+        const i00 = (y0 * sw + x0) * 4;
+        const i10 = (y0 * sw + x1) * 4;
+        const i01 = (y1 * sw + x0) * 4;
+        const i11 = (y1 * sw + x1) * 4;
+
+        const w00 = ifx * ify, w10 = fx * ify, w01 = ifx * fy, w11 = fx * fy;
+
+        dstPix[di]   = srcPix[i00]   * w00 + srcPix[i10]   * w10 + srcPix[i01]   * w01 + srcPix[i11]   * w11;
+        dstPix[di+1] = srcPix[i00+1] * w00 + srcPix[i10+1] * w10 + srcPix[i01+1] * w01 + srcPix[i11+1] * w11;
+        dstPix[di+2] = srcPix[i00+2] * w00 + srcPix[i10+2] * w10 + srcPix[i01+2] * w01 + srcPix[i11+2] * w11;
+        dstPix[di+3] = 255;
+        di += 4;
+      }
+    }
+    dstCtx.putImageData(dstData, 0, 0);
+    return dst;
+  }
+
+  // ¿Los 4 puntos forman casi un rect alineado a los ejes? → usar drawImage (más rápido)
+  function isNearlyAxisRect(corners, tol = 0.008) {
+    return Math.abs(corners[0].y - corners[1].y) < tol
+        && Math.abs(corners[2].y - corners[3].y) < tol
+        && Math.abs(corners[0].x - corners[3].x) < tol
+        && Math.abs(corners[1].x - corners[2].x) < tol;
+  }
+
+  /* =========================================================
      INDEXEDDB
      ========================================================= */
   const DB_NAME = "omgscan", DB_VERSION = 1, STORE = "documents";
@@ -990,12 +1158,22 @@
 
   const MAX_DIM = 2400;
 
+  const DEFAULT_CORNERS = () => ([
+    { x: 0.06, y: 0.06 },
+    { x: 0.94, y: 0.06 },
+    { x: 0.94, y: 0.94 },
+    { x: 0.06, y: 0.94 },
+  ]);
+
   const state = {
     stream: null, facing: "environment",
     torchOn: false, torchSupported: false,
     rawCapture: null,
     rotation: 0,
-    crop: { x1: 0.06, y1: 0.06, x2: 0.94, y2: 0.94, zoom: 1, panX: 0, panY: 0 },
+    crop: {
+      corners: DEFAULT_CORNERS(),  // TL, TR, BR, BL en coords normalizadas 0..1
+      zoom: 1, panX: 0, panY: 0,
+    },
     cropped: null,
     currentFilter: "auto",
     pages: [],
@@ -1008,7 +1186,6 @@
     renderedCanvas: null,
     currentDocId: null,
     isPainting: false,
-    // Quadscan
     quadscanInstance: null,
     quadscanPromise: null,
     quadscanReady: false,
@@ -1024,7 +1201,7 @@
   ];
 
   /* =========================================================
-     LIBRARY LOADER (descarga con progreso)
+     LIBRARY LOADER
      ========================================================= */
   const LibraryLoader = (() => {
     const cache = new Map();
@@ -1219,11 +1396,13 @@
   }
 
   /* =========================================================
-     CROP
+     CROP (quadrilateral)
      ========================================================= */
   const cropImg = $("#cropImg");
   const cropWrap = $("#cropWrap");
-  const cropRect = $("#cropRect");
+  const cropSvg = $("#cropSvg");
+  const cropPoly = $("#cropPoly");
+  const cropDark = $("#cropDark");
   const cropStage = $("#cropStage");
   const cropHint = $("#cropHint");
 
@@ -1231,37 +1410,41 @@
     cropImg.style.opacity = "1";
     cropImg.src = state.rawCapture;
     state.rotation = 0;
-    state.crop = { x1: 0.06, y1: 0.06, x2: 0.94, y2: 0.94, zoom: 1, panX: 0, panY: 0 };
+    state.crop.corners = DEFAULT_CORNERS();
+    state.crop.zoom = 1;
+    state.crop.panX = 0;
+    state.crop.panY = 0;
     applyCropTransform();
     cropImg.onload = () => {
       requestAnimationFrame(() => {
-        layoutHandles(); drawCropRect();
+        drawCropOverlay();
         updateAutoDetectBtn();
       });
     };
     show("crop");
     updateAutoDetectBtn();
   }
-  function drawCropRect() {
-    const { x1, y1, x2, y2 } = state.crop;
-    cropRect.style.left   = (x1 * 100) + "%";
-    cropRect.style.top    = (y1 * 100) + "%";
-    cropRect.style.width  = ((x2 - x1) * 100) + "%";
-    cropRect.style.height = ((y2 - y1) * 100) + "%";
+
+  function cornersToPointsAttr(corners) {
+    return corners.map((c) => `${c.x},${c.y}`).join(" ");
   }
-  function layoutHandles() {
-    const map = {
-      tl: [state.crop.x1, state.crop.y1],
-      tr: [state.crop.x2, state.crop.y1],
-      br: [state.crop.x2, state.crop.y2],
-      bl: [state.crop.x1, state.crop.y2],
-    };
-    $$(".handle", cropWrap).forEach((h) => {
-      const [x, y] = map[h.dataset.h];
-      h.style.left = (x * 100) + "%";
-      h.style.top  = (y * 100) + "%";
+
+  function drawCropOverlay() {
+    const c = state.crop.corners;
+    // Polígono principal
+    cropPoly.setAttribute("points", cornersToPointsAttr(c));
+    // Sombra exterior: rect completo + subpath del polígono invertido por evenodd
+    const outer = "M0,0 L1,0 L1,1 L0,1 Z";
+    const inner = `M${c[0].x},${c[0].y} L${c[1].x},${c[1].y} L${c[2].x},${c[2].y} L${c[3].x},${c[3].y} Z`;
+    cropDark.setAttribute("d", outer + " " + inner);
+    // Handles
+    $$(".crop-handle", cropWrap).forEach((h, i) => {
+      const p = c[i];
+      h.style.left = (p.x * 100) + "%";
+      h.style.top  = (p.y * 100) + "%";
     });
   }
+
   function applyCropTransform() {
     const { zoom, panX, panY } = state.crop;
     cropWrap.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
@@ -1292,35 +1475,72 @@
       img.src = dataURL;
     });
   }
+
   async function rotateCrop(degrees) {
     if (!state.rawCapture) return;
     cropImg.style.opacity = "0.35";
     const newData = await rotateImageDataURL(state.rawCapture, degrees);
     state.rawCapture = newData;
     state.rotation = ((state.rotation + degrees) % 360 + 360) % 360;
-    state.crop = { x1: 0.06, y1: 0.06, x2: 0.94, y2: 0.94, zoom: 1, panX: 0, panY: 0 };
+
+    // Rotar corners. Si degrees es +90 (CW) o -90 (CCW).
+    const c = state.crop.corners;
+    let rotated;
+    if (degrees === 90) {
+      // (x,y) → (1-y, x). Nuevo orden: [BLr, TLr, TRr, BRr]
+      rotated = [
+        { x: 1 - c[3].y, y: c[3].x }, // old BL → new TL
+        { x: 1 - c[0].y, y: c[0].x }, // old TL → new TR
+        { x: 1 - c[1].y, y: c[1].x }, // old TR → new BR
+        { x: 1 - c[2].y, y: c[2].x }, // old BR → new BL
+      ];
+    } else if (degrees === -90) {
+      // (x,y) → (y, 1-x). Nuevo orden: [TRr, BRr, BLr, TLr]
+      rotated = [
+        { x: c[1].y, y: 1 - c[1].x }, // old TR → new TL
+        { x: c[2].y, y: 1 - c[2].x }, // old BR → new TR
+        { x: c[3].y, y: 1 - c[3].x }, // old BL → new BR
+        { x: c[0].y, y: 1 - c[0].x }, // old TL → new BL
+      ];
+    } else {
+      rotated = c;
+    }
+    state.crop.corners = rotated.map((p) => ({
+      x: clamp(p.x, 0, 1), y: clamp(p.y, 0, 1),
+    }));
+    state.crop.zoom = 1;
+    state.crop.panX = 0;
+    state.crop.panY = 0;
     applyCropTransform();
+
     cropImg.onload = () => {
       cropImg.style.opacity = "1";
-      requestAnimationFrame(() => { layoutHandles(); drawCropRect(); });
+      requestAnimationFrame(() => drawCropOverlay());
     };
     cropImg.src = state.rawCapture;
     buzz(12);
   }
 
+  /* ------- Gestos: pinch, pan y drag de handles ------- */
   const activePointers = new Map();
   let gesture = null;
+
   cropStage.addEventListener("pointerdown", (e) => {
     activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
     if (activePointers.size === 2) {
       const [a, b] = [...activePointers.values()];
       gesture = { mode: "pinch", initialDist: dist(a, b), initialZoom: state.crop.zoom };
+      // Cancelar drag de handle si había uno
+      $$(".crop-handle.active").forEach((h) => h.classList.remove("active"));
       return;
     }
     if (activePointers.size === 1) {
-      const h = e.target.closest(".handle");
-      if (h) {
-        gesture = { mode: "handle", h: h.dataset.h, pointerId: e.pointerId };
+      const handle = e.target.closest(".crop-handle");
+      if (handle) {
+        const i = +handle.dataset.i;
+        gesture = { mode: "handle", i, pointerId: e.pointerId };
+        handle.classList.add("active");
       } else if (state.crop.zoom > 1.05) {
         gesture = {
           mode: "pan", pointerId: e.pointerId,
@@ -1331,9 +1551,11 @@
     }
     cropStage.setPointerCapture(e.pointerId);
   });
+
   cropStage.addEventListener("pointermove", (e) => {
     if (!activePointers.has(e.pointerId)) return;
     activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
     if (gesture?.mode === "pinch" && activePointers.size >= 2) {
       const [a, b] = [...activePointers.values()];
       state.crop.zoom = clamp(gesture.initialZoom * (dist(a, b) / gesture.initialDist), 1, 5);
@@ -1348,26 +1570,37 @@
     }
     if (gesture?.mode === "handle" && gesture.pointerId === e.pointerId) {
       const r = cropWrap.getBoundingClientRect();
-      let nx = clamp((e.clientX - r.left) / r.width, 0, 1);
-      let ny = clamp((e.clientY - r.top) / r.height, 0, 1);
-      const c = state.crop, min = 0.08;
-      if (gesture.h === "tl") { c.x1 = Math.min(nx, c.x2 - min); c.y1 = Math.min(ny, c.y2 - min); }
-      if (gesture.h === "tr") { c.x2 = Math.max(nx, c.x1 + min); c.y1 = Math.min(ny, c.y2 - min); }
-      if (gesture.h === "br") { c.x2 = Math.max(nx, c.x1 + min); c.y2 = Math.max(ny, c.y1 + min); }
-      if (gesture.h === "bl") { c.x1 = Math.min(nx, c.x2 - min); c.y2 = Math.max(ny, c.y1 + min); }
-      layoutHandles(); drawCropRect();
+      const nx = clamp((e.clientX - r.left) / r.width, 0, 1);
+      const ny = clamp((e.clientY - r.top) / r.height, 0, 1);
+      state.crop.corners[gesture.i] = { x: nx, y: ny };
+      drawCropOverlay();
     }
   });
+
   const endPointer = (e) => {
     activePointers.delete(e.pointerId);
-    if (activePointers.size === 0) gesture = null;
+    if (activePointers.size === 0) {
+      gesture = null;
+      $$(".crop-handle.active").forEach((h) => h.classList.remove("active"));
+    }
     if (gesture?.mode === "pinch" && activePointers.size < 2) gesture = null;
   };
   cropStage.addEventListener("pointerup", endPointer);
   cropStage.addEventListener("pointercancel", endPointer);
 
+  /* ------- Validación mínima: área cubierta ------- */
+  function polygonArea(corners) {
+    // Shoelace
+    let a = 0;
+    for (let i = 0; i < 4; i++) {
+      const p = corners[i], q = corners[(i + 1) % 4];
+      a += p.x * q.y - q.x * p.y;
+    }
+    return Math.abs(a) / 2;
+  }
+
   /* =========================================================
-     OVERLAY DE DESCARGA (heavy libs)
+     OVERLAY DE DESCARGA
      ========================================================= */
   const libOverlay = $("#libOverlay");
   const libIcon = $("#libIcon");
@@ -1403,8 +1636,6 @@
       preloadChip._hideTimer = setTimeout(() => preloadChip.classList.remove("show"), 2200);
       return;
     }
-
-    // Si Quadscan falló pero Tesseract no, no marcamos error — solo mostramos progreso
     if (anyError && preloadState.quadscan === "error" && preloadState.tesseract !== 1) {
       preloadTxt.textContent = "Cargando OCR…";
       preloadPct.textContent = Math.round((preloadState.tesseract || 0) * 100) + "%";
@@ -1480,10 +1711,7 @@
       showLibOverlay({
         icon, name: label,
         status: "Inicializando motor…",
-        percent: 0.95,
-        meta: "",
-        note: "",
-        showCancel,
+        percent: 0.95, meta: "", note: "", showCancel,
       });
     } else if (st.phase === "ready") {
       showLibOverlay({
@@ -1497,7 +1725,7 @@
   }
 
   /* =========================================================
-     QUADSCAN — carga + init
+     QUADSCAN
      ========================================================= */
   const QUADSCAN_URL = "https://cdn.jsdelivr.net/npm/quadscan/dist/quadscan.iife.js";
 
@@ -1527,7 +1755,7 @@
 
       const Cls = (window.Quadscan && window.Quadscan.Quadscan) || window.Quadscan;
       if (typeof Cls !== "function") {
-        throw new Error("Quadscan clase no encontrada en window");
+        throw new Error("Quadscan clase no encontrada");
       }
 
       const instance = new Cls();
@@ -1550,9 +1778,7 @@
 
       if (!silent) {
         showLibOverlay({
-          icon: "✅",
-          name: "IA de precisión",
-          status: "¡Listo!",
+          icon: "✅", name: "IA de precisión", status: "¡Listo!",
           percent: 1, meta: "", note: "",
         });
         setTimeout(hideLibOverlay, 350);
@@ -1594,57 +1820,45 @@
       btn.textContent = "✨ Auto-detectar";
     } else if (state.quadscanFailed) {
       btn.classList.add("fallado");
-      btn.disabled = false; // dejamos tocar para que muestre el error
+      btn.disabled = false;
       btn.textContent = "⚠️ IA no disponible";
     } else {
-      // Cargando
       const pct = Math.round((preloadState.quadscan || 0) * 100);
       btn.classList.add("cargando");
-      btn.disabled = false; // permitimos tap para mostrar overlay con progreso
+      btn.disabled = false;
       btn.textContent = `⏳ Preparando IA… ${pct}%`;
     }
   }
 
   /* =========================================================
-     AUTO-DETECCIÓN — Quadscan only
+     AUTO-DETECCIÓN — Quadscan (guarda 4 puntos, sin bounding box)
      ========================================================= */
   async function autoDetectEdges() {
     if (!cropImg.complete || !cropImg.naturalWidth) {
       showToast("Esperá a que la imagen cargue");
       return;
     }
-
-    // Si el modelo no está listo, mostrar overlay de carga (o error)
     if (!state.quadscanReady) {
       if (state.quadscanFailed) {
         showToast("IA no disponible en este dispositivo. Ajustá a mano.");
         return;
       }
-      // Mostrar overlay con progreso en vivo y esperar
       showLibOverlay({
-        icon: "🎯",
-        name: "IA de precisión",
+        icon: "🎯", name: "IA de precisión",
         status: "Preparando detector…",
         percent: preloadState.quadscan || 0.05,
         meta: "El primer escaneo descarga el modelo (~4.5 MB)",
         note: "Después queda cacheado y es instantáneo.",
       });
-      try {
-        await loadQuadscan({ silent: true });
-      } catch (e) {
-        hideLibOverlay();
-        showToast("No pudimos cargar la IA. Ajustá a mano.");
-        return;
-      }
+      try { await loadQuadscan({ silent: true }); }
+      catch (e) { hideLibOverlay(); showToast("No pudimos cargar la IA."); return; }
       hideLibOverlay();
     }
 
     const btn = $("#cropAuto");
-    btn.disabled = true;
     const old = btn.textContent;
+    btn.disabled = true;
     btn.textContent = "⏳ Detectando…";
-
-    // Dejar que el browser pinte el spinner
     await new Promise((r) => setTimeout(r, 40));
 
     try {
@@ -1660,25 +1874,25 @@
       const w = cropImg.naturalWidth;
       const h = cropImg.naturalHeight;
       const { topLeft, topRight, bottomRight, bottomLeft } = result.corners;
-      const xs = [topLeft.x, topRight.x, bottomRight.x, bottomLeft.x];
-      const ys = [topLeft.y, topRight.y, bottomRight.y, bottomLeft.y];
-      const pad = 0.005;
 
-      state.crop.x1 = clamp(Math.min(...xs) / w - pad, 0, 1);
-      state.crop.y1 = clamp(Math.min(...ys) / h - pad, 0, 1);
-      state.crop.x2 = clamp(Math.max(...xs) / w + pad, 0, 1);
-      state.crop.y2 = clamp(Math.max(...ys) / h + pad, 0, 1);
+      // Guardar los 4 puntos TAL CUAL los devuelve Quadscan, normalizados.
+      // Nada de bounding box: cada esquina es un punto independiente.
+      const pad = 0.003;
+      state.crop.corners = [
+        { x: clamp(topLeft.x / w - pad, 0, 1),     y: clamp(topLeft.y / h - pad, 0, 1) },
+        { x: clamp(topRight.x / w + pad, 0, 1),    y: clamp(topRight.y / h - pad, 0, 1) },
+        { x: clamp(bottomRight.x / w + pad, 0, 1), y: clamp(bottomRight.y / h + pad, 0, 1) },
+        { x: clamp(bottomLeft.x / w - pad, 0, 1),  y: clamp(bottomLeft.y / h + pad, 0, 1) },
+      ];
       state.crop.zoom = 1;
       state.crop.panX = 0;
       state.crop.panY = 0;
       applyCropTransform();
-      layoutHandles();
-      drawCropRect();
+      drawCropOverlay();
       buzz(20);
 
       const conf = typeof result.confidence === "number"
-        ? Math.round(result.confidence * 100)
-        : null;
+        ? Math.round(result.confidence * 100) : null;
       const msg = conf != null
         ? `Bordes detectados ✨ ${conf}% · ${ms}ms`
         : `Bordes detectados ✨ ${ms}ms`;
@@ -1692,7 +1906,7 @@
   }
 
   /* =========================================================
-     WORK CANVASES
+     WORK CANVASES + WARP
      ========================================================= */
   function getWorkCanvas(imgEl) {
     const nw = imgEl.naturalWidth, nh = imgEl.naturalHeight;
@@ -1704,22 +1918,52 @@
     c.getContext("2d").drawImage(imgEl, 0, 0, w, h);
     return c;
   }
+
   function buildCroppedCanvas() {
     return new Promise((resolve) => {
       const img = new Image();
       img.onload = () => {
         const full = getWorkCanvas(img);
-        const { x1, y1, x2, y2 } = state.crop;
-        const cw = Math.round((x2 - x1) * full.width);
-        const ch = Math.round((y2 - y1) * full.height);
-        const c = document.createElement("canvas");
-        c.width = cw; c.height = ch;
-        c.getContext("2d").drawImage(
-          full,
-          Math.round(x1 * full.width), Math.round(y1 * full.height), cw, ch,
-          0, 0, cw, ch
-        );
-        resolve(c);
+        const c = state.crop.corners;
+
+        // Fast path: rect casi alineado a los ejes
+        if (isNearlyAxisRect(c)) {
+          const xs = c.map((p) => p.x), ys = c.map((p) => p.y);
+          const x1 = clamp(Math.min(...xs), 0, 1), x2 = clamp(Math.max(...xs), 0, 1);
+          const y1 = clamp(Math.min(...ys), 0, 1), y2 = clamp(Math.max(...ys), 0, 1);
+          const cw = Math.round((x2 - x1) * full.width);
+          const ch = Math.round((y2 - y1) * full.height);
+          const out = document.createElement("canvas");
+          out.width = Math.max(1, cw); out.height = Math.max(1, ch);
+          out.getContext("2d").drawImage(
+            full,
+            Math.round(x1 * full.width), Math.round(y1 * full.height), cw, ch,
+            0, 0, cw, ch
+          );
+          resolve(out);
+          return;
+        }
+
+        // Warp de perspectiva
+        try {
+          const out = warpPerspective(full, c);
+          resolve(out);
+        } catch (e) {
+          console.error("[warp] Falló, usando bounding box como fallback:", e);
+          const xs = c.map((p) => p.x), ys = c.map((p) => p.y);
+          const x1 = clamp(Math.min(...xs), 0, 1), x2 = clamp(Math.max(...xs), 0, 1);
+          const y1 = clamp(Math.min(...ys), 0, 1), y2 = clamp(Math.max(...ys), 0, 1);
+          const cw = Math.round((x2 - x1) * full.width);
+          const ch = Math.round((y2 - y1) * full.height);
+          const out = document.createElement("canvas");
+          out.width = Math.max(1, cw); out.height = Math.max(1, ch);
+          out.getContext("2d").drawImage(
+            full,
+            Math.round(x1 * full.width), Math.round(y1 * full.height), cw, ch,
+            0, 0, cw, ch
+          );
+          resolve(out);
+        }
       };
       img.src = state.rawCapture;
     });
@@ -2099,19 +2343,40 @@
      FLUJO CROP → FILTERS
      ========================================================= */
   async function goToFilters() {
-    const canvas = await buildCroppedCanvas();
-    state.preFilterCanvas = canvas;
-    state.cropped = canvas.toDataURL("image/jpeg", 0.92);
-    state.brush.mask = null;
-    state.brush.strokes = [];
-    state.brush.w = 0;
-    state.brush.h = 0;
-    ensureMask(canvas.width, canvas.height);
-    state.currentFilter = "auto";
-    setBrushEnabled(false);
-    show("filters");
-    buildFilterRail();
-    renderFinal();
+    if (polygonArea(state.crop.corners) < 0.01) {
+      showToast("El área seleccionada es muy chica");
+      return;
+    }
+
+    const btn = $("#cropNext");
+    const old = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner"></span> Procesando…`;
+    await new Promise((r) => setTimeout(r, 30));
+
+    try {
+      const canvas = await buildCroppedCanvas();
+      state.preFilterCanvas = canvas;
+      state.cropped = canvas.toDataURL("image/jpeg", 0.92);
+
+      state.brush.mask = null;
+      state.brush.strokes = [];
+      state.brush.w = 0;
+      state.brush.h = 0;
+      ensureMask(canvas.width, canvas.height);
+
+      state.currentFilter = "auto";
+      setBrushEnabled(false);
+      show("filters");
+      buildFilterRail();
+      renderFinal();
+    } catch (e) {
+      console.error("[goToFilters]", e);
+      showToast("Error al procesar: " + (e.message || ""));
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = old;
+    }
   }
 
   /* =========================================================
@@ -2176,7 +2441,7 @@
   }
 
   /* =========================================================
-     OCR — tesseract.js
+     OCR
      ========================================================= */
   const ocrOverlay = $("#ocrOverlay");
   const ocrTitle = $("#ocrTitle");
@@ -2593,13 +2858,18 @@
     show("camera"); await startCamera();
   });
   $("#cropFull").addEventListener("click", () => {
-    state.crop.x1 = 0; state.crop.y1 = 0; state.crop.x2 = 1; state.crop.y2 = 1;
+    state.crop.corners = [
+      { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 },
+    ];
     state.crop.zoom = 1; state.crop.panX = 0; state.crop.panY = 0;
-    layoutHandles(); drawCropRect(); applyCropTransform();
+    applyCropTransform();
+    drawCropOverlay();
   });
   $("#cropReset").addEventListener("click", () => {
-    state.crop = { x1: 0.06, y1: 0.06, x2: 0.94, y2: 0.94, zoom: 1, panX: 0, panY: 0 };
-    layoutHandles(); drawCropRect(); applyCropTransform();
+    state.crop.corners = DEFAULT_CORNERS();
+    state.crop.zoom = 1; state.crop.panX = 0; state.crop.panY = 0;
+    applyCropTransform();
+    drawCropOverlay();
   });
   $("#cropRotateL").addEventListener("click", () => rotateCrop(-90));
   $("#cropRotateR").addEventListener("click", () => rotateCrop(90));
@@ -2609,7 +2879,7 @@
   $("#filtersBack").addEventListener("click", () => {
     setBrushEnabled(false);
     show("crop");
-    requestAnimationFrame(() => { layoutHandles(); drawCropRect(); });
+    requestAnimationFrame(() => drawCropOverlay());
   });
   $("#filtersAddPage").addEventListener("click", async () => {
     await commitCurrentPage();
@@ -2717,12 +2987,12 @@
      ========================================================= */
   window.addEventListener("resize", () => {
     if (views.crop.classList.contains("active")) {
-      layoutHandles(); drawCropRect();
+      drawCropOverlay();
     }
   });
   window.addEventListener("orientationchange", () => setTimeout(() => {
     if (views.crop.classList.contains("active")) {
-      layoutHandles(); drawCropRect();
+      drawCropOverlay();
     }
   }, 250));
   document.addEventListener("visibilitychange", () => {
@@ -2745,7 +3015,7 @@
   }
 
   /* =========================================================
-     BOOT — preload de Quadscan y Tesseract
+     BOOT
      ========================================================= */
   (async function boot() {
     await refreshLibraryCount();
@@ -2756,12 +3026,8 @@
     if (action === "scan") { show("camera"); await startCamera(); }
     else if (action === "library") { openLibrary(); }
 
-    // Preload de Quadscan apenas carga el DOM. No esperamos idle.
-    // Es la única forma de tener el detector listo cuando el usuario
-    // toca "Auto-detectar" en los primeros segundos.
     setTimeout(() => {
       preloadQuadscan();
-      // Tesseract va después, es menos urgente
       setTimeout(preloadTesseract, 5000);
     }, 800);
   })();
