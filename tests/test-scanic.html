@@ -84,8 +84,8 @@
   <div class="log" id="log">Esperando acción…</div>
 </div>
 
-<!-- Scanic CDN -->
-<script src="https://unpkg.com/scanic/dist/scanic.js"></script>
+<!-- Scanic UMD (crea window.scanic) -->
+<script src="https://unpkg.com/scanic/dist/scanic.umd.cjs"></script>
 <script>
 (() => {
   "use strict";
@@ -112,7 +112,7 @@
     libStatus.style.borderColor = ok ? "rgba(200,255,46,.35)" : "rgba(255,90,95,.4)";
   }
 
-  // Detectar si la librería cargó (Scanic puede tardar en exponer el global)
+  // Detectar si la librería cargó
   (function waitForScanic() {
     let tries = 0;
     const check = setInterval(() => {
@@ -127,6 +127,7 @@
         clearInterval(check);
         setLibStatus(false, "Scanic no cargó");
         log("ERROR: scanic no se expuso en window después de 10s", "err");
+        log("Verificá que la URL sea https://unpkg.com/scanic/dist/scanic.umd.cjs", "info");
       }
     }, 100);
   })();
@@ -169,6 +170,7 @@
     log("Llamando a scanic.scanDocument()…");
     const t0 = performance.now();
     try {
+      // API UMD: window.scanic.scanDocument
       const result = await window.scanic.scanDocument(currentImage);
       const ms = Math.round(performance.now() - t0);
       log("Respuesta en " + ms + "ms", "info");
@@ -251,7 +253,6 @@
     }
     ctx.closePath();
     ctx.stroke();
-    // Dibujar círculos en cada esquina
     n.forEach((p, i) => {
       ctx.fillStyle = "#C8FF2E";
       ctx.beginPath();

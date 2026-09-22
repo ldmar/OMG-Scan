@@ -79,6 +79,7 @@
       📷 Elegir foto
       <input type="file" id="fileInput" accept="image/*" />
     </label>
+    <button id="btnInit" disabled>⚡ Inicializar modelo</button>
     <button id="btnScan" disabled>🔍 Escanear</button>
   </div>
 
@@ -110,6 +111,7 @@
   const progressFill = $("#progressFill");
 
   let currentImage = null;
+  let quadscan = null;  // instancia
 
   function log(msg, cls = "info") {
     const time = new Date().toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -139,7 +141,9 @@
       if (typeof window.Quadscan !== "undefined" && window.Quadscan) {
         clearInterval(check);
         setLibStatus(true, "Quadscan cargado");
-        log("Quadscan disponible. Métodos: " + Object.keys(window.Quadscan).join(", "), "ok");
+        log("Quadscan disponible. Tipo: " + typeof window.Quadscan, "ok");
+        log("Claves del global: " + Object.keys(window.Quadscan).join(", "), "info");
+        $("#btnInit").disabled = false;
         return;
       }
       if (tries > 100) {
@@ -177,21 +181,52 @@
     e.target.value = "";
   });
 
+  // Inicializar modelo (descarga 4.8 MB la primera vez)
+  $("#btnInit").addEventListener("click", async () => {
+    const btn = $("#btnInit");
+    btn.disabled = true;
+    const old = btn.innerHTML;
+    btn.innerHTML = "⏳ Inicializando…";
+    log("Creando instancia Quadscan…");
+    setProgress(0.05);
+    try {
+      // La instancia se crea con new Quadscan()
+      quadscan = new window.Quadscan();
+      log("Instancia creada. Métodos: " + Object.getOwnPropertyNames(Object.getPrototypeOf(quadscan)).join(", "), "info");
+      log("Inicializando modelo (descarga ~4.8 MB la primera vez)…");
+      setProgress(0.3);
+      await quadscan.initialize();
+      setProgress(1);
+      log("✅ Modelo inicializado y listo", "ok");
+      setLibStatus(true, "Modelo cargado");
+      setTimeout(() => setProgress(null), 500);
+      btn.innerHTML = "✅ Listo";
+      btn.disabled = true;
+    } catch (e) {
+      setProgress(null);
+      log("ERROR inicializando: " + e.message, "err");
+      console.error(e);
+      btn.disabled = false;
+      btn.innerHTML = old;
+    }
+  });
+
   // Escanear
   $("#btnScan").addEventListener("click", async () => {
     if (!currentImage) return;
+    if (!quadscan) {
+      log("⚠️ Primero tocá 'Inicializar modelo'", "err");
+      return;
+    }
     const btn = $("#btnScan");
     btn.disabled = true;
     const old = btn.innerHTML;
     btn.innerHTML = "⏳ Escaneando…";
-    log("Llamando a Quadscan.scan()…");
-    log("(La primera vez descarga el modelo ~4.8 MB. Podés ver el progreso abajo.)", "info");
-    setProgress(0.05);
+    log("Llamando a quadscan.scan()…");
+    setProgress(0.5);
     const t0 = performance.now();
     try {
-      // Quadscan acepta HTMLImageElement, Blob, File, etc.
-      // Usamos mode: 'extract' para obtener directamente el canvas del documento
-      const result = await window.Quadscan.scan(currentImage, { mode: "extract" });
+      const result = await quadscan.scan(currentImage, { mode: "extract" });
       const ms = Math.round(performance.now() - t0);
       setProgress(null);
       log("Respuesta en " + ms + "ms", "info");
