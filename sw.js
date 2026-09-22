@@ -1,6 +1,6 @@
-/* OMG Scan · Service Worker v1.3.0 */
+/* OMG Scan · Service Worker v1.4.0 */
 
-const VERSION       = 'v1.3.0';
+const VERSION       = 'v1.4.0';
 const SHELL_CACHE   = `omgscan-shell-${VERSION}`;
 const RUNTIME_CACHE = `omgscan-runtime-${VERSION}`;
 
@@ -12,7 +12,8 @@ const PRECACHE = [
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/apple-touch-icon.png',
-  'https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js'
+  'https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js',
+  'https://cdn.jsdelivr.net/npm/quadscan/dist/quadscan.iife.js'
 ];
 
 self.addEventListener('install', (event) => {
@@ -43,7 +44,6 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
 
-  // Navegación → network-first, fallback al shell
   if (req.mode === 'navigate' || req.destination === 'document') {
     event.respondWith(
       fetch(req)
@@ -57,7 +57,6 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Whitelist de CDNs (Scanic, Tesseract, pdf-lib, fonts)
   const whitelisted =
     url.origin === self.location.origin ||
     url.hostname === 'cdn.jsdelivr.net' ||

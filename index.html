@@ -174,6 +174,10 @@
   .btn.laser{background:rgba(200,255,46,.14);border-color:rgba(200,255,46,.4);color:var(--laser)}
   .btn:disabled{opacity:.4;pointer-events:none}
   .btn.sm{padding:10px 14px;font-size:13px;border-radius:12px}
+  .btn.cargando{background:rgba(108,77,255,.2);border-color:rgba(108,77,255,.5);color:#c5b8ff;
+    pointer-events:none}
+  .btn.fallado{background:rgba(255,90,95,.12);border-color:rgba(255,90,95,.35);color:#ffb1b3;
+    pointer-events:none}
   .top-bar{
     position:absolute;top:calc(env(safe-area-inset-top) + 10px);left:0;right:0;
     display:flex;justify-content:space-between;align-items:center;padding:0 16px;z-index:6
@@ -185,7 +189,6 @@
     padding:6px 14px;border-radius:999px;white-space:nowrap;z-index:4;pointer-events:none
   }
 
-  /* Rotación — botones flotantes */
   .crop-floating-tools{
     position:absolute;
     right:16px;
@@ -505,7 +508,6 @@
     margin-top:2px;line-height:1.4
   }
 
-  /* Preload chip (solo Tesseract) */
   .preload-chip{
     position:absolute;top:calc(env(safe-area-inset-top) + 12px);left:16px;
     background:rgba(255,255,255,.05);border:1px solid var(--stroke);
@@ -555,7 +557,7 @@
     <button class="install-chip" id="btnInstall">⬇ Instalar app</button>
     <button class="preload-chip" id="preloadChip">
       <span class="mini-spin"></span>
-      <span class="txt" id="preloadTxt">Preparando OCR…</span>
+      <span class="txt" id="preloadTxt">Preparando IA…</span>
       <span class="pct" id="preloadPct">0%</span>
     </button>
     <div class="logo-lockup">
@@ -592,7 +594,7 @@
       <span class="count" id="libCount" style="display:none">0</span>
     </button>
 
-    <div class="hint">by Ohmygoch · v1.3.0</div>
+    <div class="hint">by Ohmygoch · v1.4.0</div>
   </section>
 
   <!-- ============== CAMERA ============== -->
@@ -673,7 +675,7 @@
     <div class="crop-hint" id="cropHint">Pellizcá para zoom · arrastrá las esquinas</div>
     <div class="crop-bar">
       <button class="btn ghost sm" id="cropFull">Usar todo</button>
-      <button class="btn laser sm" id="cropAuto">✨ Auto-detectar</button>
+      <button class="btn laser sm" id="cropAuto">⏳ Preparando IA…</button>
       <button class="btn primary" id="cropNext">Aplicar</button>
     </div>
   </section>
@@ -843,8 +845,6 @@
 
 <div class="toast" id="toast"></div>
 
-<!-- Scanic: detector de bordes (~100 KB, bloquea parser ~200ms) -->
-<script src="https://unpkg.com/scanic/dist/scanic.umd.cjs"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js" defer></script>
 <script>
 (() => {
@@ -1008,7 +1008,11 @@
     renderedCanvas: null,
     currentDocId: null,
     isPainting: false,
-    scanicAvailable: false,
+    // Quadscan
+    quadscanInstance: null,
+    quadscanPromise: null,
+    quadscanReady: false,
+    quadscanFailed: false,
   };
 
   const FILTERS = [
@@ -1020,7 +1024,7 @@
   ];
 
   /* =========================================================
-     LIBRARY LOADER (solo Tesseract ahora)
+     LIBRARY LOADER (descarga con progreso)
      ========================================================= */
   const LibraryLoader = (() => {
     const cache = new Map();
@@ -1229,10 +1233,14 @@
     state.rotation = 0;
     state.crop = { x1: 0.06, y1: 0.06, x2: 0.94, y2: 0.94, zoom: 1, panX: 0, panY: 0 };
     applyCropTransform();
-    cropImg.onload = () => requestAnimationFrame(() => {
-      layoutHandles(); drawCropRect();
-    });
+    cropImg.onload = () => {
+      requestAnimationFrame(() => {
+        layoutHandles(); drawCropRect();
+        updateAutoDetectBtn();
+      });
+    };
     show("crop");
+    updateAutoDetectBtn();
   }
   function drawCropRect() {
     const { x1, y1, x2, y2 } = state.crop;
@@ -1359,30 +1367,289 @@
   cropStage.addEventListener("pointercancel", endPointer);
 
   /* =========================================================
-     SCANIC — detección de bordes
+     OVERLAY DE DESCARGA (heavy libs)
      ========================================================= */
-  async function autoDetectEdges() {
-    const btn = $("#cropAuto");
-    const old = btn.innerHTML;
+  const libOverlay = $("#libOverlay");
+  const libIcon = $("#libIcon");
+  const libNameEl = $("#libName");
+  const libStatusEl = $("#libStatus");
+  const libBarFill = $("#libBarFill");
+  const libMetaEl = $("#libMeta");
+  const libNoteEl = $("#libNote");
+  const libCancelBtn = $("#libCancel");
+  const preloadChip = $("#preloadChip");
+  const preloadTxt = $("#preloadTxt");
+  const preloadPct = $("#preloadPct");
 
-    if (!window.scanic) {
-      showToast("Detector no disponible. Recargá la página.");
+  let currentLibURL = null;
+  const preloadState = { quadscan: 0, tesseract: 0 };
+
+  function updatePreloadChip() {
+    const vals = Object.values(preloadState);
+    if (!vals.length) return;
+    const numericVals = vals.map((v) => typeof v === "number" ? v : 0);
+    const avg = numericVals.reduce((a, b) => a + b, 0) / numericVals.length;
+    const allDone = vals.every((v) => v === 1);
+    const anyError = vals.some((v) => v === "error");
+
+    preloadChip.classList.add("show");
+    preloadChip.classList.remove("error", "done");
+
+    if (allDone) {
+      preloadChip.classList.add("done");
+      preloadTxt.textContent = "Todo listo";
+      preloadPct.textContent = "✓";
+      clearTimeout(preloadChip._hideTimer);
+      preloadChip._hideTimer = setTimeout(() => preloadChip.classList.remove("show"), 2200);
       return;
     }
+
+    // Si Quadscan falló pero Tesseract no, no marcamos error — solo mostramos progreso
+    if (anyError && preloadState.quadscan === "error" && preloadState.tesseract !== 1) {
+      preloadTxt.textContent = "Cargando OCR…";
+      preloadPct.textContent = Math.round((preloadState.tesseract || 0) * 100) + "%";
+      return;
+    }
+    preloadTxt.textContent = "Preparando IA…";
+    preloadPct.textContent = Math.round(avg * 100) + "%";
+  }
+
+  function showLibOverlay({ icon, name, status, percent, meta, note, showCancel }) {
+    libIcon.textContent = icon || "⚙️";
+    libIcon.classList.toggle("spin", !percent || percent < 1);
+    libNameEl.textContent = name || "Preparando…";
+    libStatusEl.textContent = status || "";
+    libBarFill.style.width = Math.round((percent || 0) * 100) + "%";
+    libMetaEl.textContent = meta || "";
+    libNoteEl.textContent = note || "";
+    libCancelBtn.style.display = (showCancel && currentLibURL) ? "" : "none";
+    libOverlay.classList.add("show");
+  }
+  function hideLibOverlay() { libOverlay.classList.remove("show"); }
+  libCancelBtn.addEventListener("click", () => {
+    if (currentLibURL) {
+      LibraryLoader.abort(currentLibURL);
+      showToast("Descarga cancelada. Podés reintentar.");
+    }
+    hideLibOverlay();
+  });
+
+  function handleProgress(st, { silent = false, label = "", icon = "⚙️", trackPreload = null, showCancel = false } = {}) {
+    if (trackPreload && preloadState[trackPreload] !== undefined) {
+      if (st.phase === "download") {
+        preloadState[trackPreload] = st.total ? st.percent : 0;
+        updatePreloadChip();
+      } else if (st.phase === "fallback") {
+        preloadState[trackPreload] = Math.max(preloadState[trackPreload] || 0, 0.1);
+        updatePreloadChip();
+      } else if (st.phase === "ready") {
+        preloadState[trackPreload] = 1;
+        updatePreloadChip();
+      } else if (st.phase === "error") {
+        preloadState[trackPreload] = "error";
+        updatePreloadChip();
+      }
+    }
+    if (silent) return;
+
+    if (st.phase === "download") {
+      const pct = st.total ? Math.round(st.percent * 100) : 0;
+      const meta = st.total
+        ? `${LibraryLoader.fmtBytes(st.loaded)} / ${LibraryLoader.fmtBytes(st.total)} · ${pct}%${
+            st.eta > 0 ? " · ~" + LibraryLoader.fmtTime(st.eta) + " restantes" : ""
+          }`
+        : `${LibraryLoader.fmtBytes(st.loaded)} descargados`;
+      showLibOverlay({
+        icon, name: label,
+        status: "Descargando…",
+        percent: st.total ? st.percent : 0.1,
+        meta,
+        note: "Solo la primera vez. Después queda cacheado.",
+        showCancel,
+      });
+    } else if (st.phase === "fallback") {
+      showLibOverlay({
+        icon, name: label,
+        status: "Descargando (progreso no disponible)…",
+        percent: 0.5,
+        meta: "El servidor no permite medir el progreso",
+        note: "Puede tardar unos segundos. Solo la primera vez.",
+        showCancel,
+      });
+    } else if (st.phase === "injecting") {
+      showLibOverlay({
+        icon, name: label,
+        status: "Inicializando motor…",
+        percent: 0.95,
+        meta: "",
+        note: "",
+        showCancel,
+      });
+    } else if (st.phase === "ready") {
+      showLibOverlay({
+        icon: "✅", name: label,
+        status: "¡Listo!", percent: 1, meta: "", note: "",
+      });
+      setTimeout(hideLibOverlay, 350);
+    } else if (st.phase === "error") {
+      hideLibOverlay();
+    }
+  }
+
+  /* =========================================================
+     QUADSCAN — carga + init
+     ========================================================= */
+  const QUADSCAN_URL = "https://cdn.jsdelivr.net/npm/quadscan/dist/quadscan.iife.js";
+
+  async function loadQuadscan({ silent = false } = {}) {
+    if (state.quadscanReady && state.quadscanInstance) return state.quadscanInstance;
+    if (state.quadscanPromise) return state.quadscanPromise;
+    if (state.quadscanFailed) throw new Error("Quadscan no disponible");
+
+    state.quadscanPromise = (async () => {
+      if (!window.Quadscan) {
+        currentLibURL = QUADSCAN_URL;
+        const { promise } = LibraryLoader.load(QUADSCAN_URL, {
+          name: "IA de precisión",
+          onProgress: (st) => {
+            handleProgress(st, {
+              silent,
+              label: "IA de precisión",
+              icon: "🎯",
+              trackPreload: "quadscan",
+              showCancel: true,
+            });
+          },
+        });
+        await promise;
+      }
+      currentLibURL = null;
+
+      const Cls = (window.Quadscan && window.Quadscan.Quadscan) || window.Quadscan;
+      if (typeof Cls !== "function") {
+        throw new Error("Quadscan clase no encontrada en window");
+      }
+
+      const instance = new Cls();
+      if (!silent) {
+        showLibOverlay({
+          icon: "🎯",
+          name: "IA de precisión",
+          status: "Inicializando modelo…",
+          percent: 0.9,
+          meta: "Descargando red neuronal (~4.5 MB)",
+          note: "Solo la primera vez. Después queda cacheado.",
+        });
+      }
+      await instance.initialize();
+
+      state.quadscanInstance = instance;
+      state.quadscanReady = true;
+      state.quadscanPromise = null;
+      updateAutoDetectBtn();
+
+      if (!silent) {
+        showLibOverlay({
+          icon: "✅",
+          name: "IA de precisión",
+          status: "¡Listo!",
+          percent: 1, meta: "", note: "",
+        });
+        setTimeout(hideLibOverlay, 350);
+      }
+      return instance;
+    })().catch((e) => {
+      console.warn("[quadscan] Falló:", e.message);
+      state.quadscanFailed = true;
+      state.quadscanPromise = null;
+      updateAutoDetectBtn();
+      if (!silent) hideLibOverlay();
+      throw e;
+    });
+
+    return state.quadscanPromise;
+  }
+
+  async function preloadQuadscan() {
+    try {
+      await loadQuadscan({ silent: true });
+      preloadState.quadscan = 1;
+    } catch (e) {
+      preloadState.quadscan = "error";
+    }
+    updatePreloadChip();
+    updateAutoDetectBtn();
+  }
+
+  /* =========================================================
+     BOTÓN AUTO-DETECTAR — estado dinámico
+     ========================================================= */
+  function updateAutoDetectBtn() {
+    const btn = $("#cropAuto");
+    if (!btn) return;
+    btn.classList.remove("laser", "cargando", "fallado");
+    if (state.quadscanReady) {
+      btn.classList.add("laser");
+      btn.disabled = false;
+      btn.textContent = "✨ Auto-detectar";
+    } else if (state.quadscanFailed) {
+      btn.classList.add("fallado");
+      btn.disabled = false; // dejamos tocar para que muestre el error
+      btn.textContent = "⚠️ IA no disponible";
+    } else {
+      // Cargando
+      const pct = Math.round((preloadState.quadscan || 0) * 100);
+      btn.classList.add("cargando");
+      btn.disabled = false; // permitimos tap para mostrar overlay con progreso
+      btn.textContent = `⏳ Preparando IA… ${pct}%`;
+    }
+  }
+
+  /* =========================================================
+     AUTO-DETECCIÓN — Quadscan only
+     ========================================================= */
+  async function autoDetectEdges() {
     if (!cropImg.complete || !cropImg.naturalWidth) {
       showToast("Esperá a que la imagen cargue");
       return;
     }
 
-    btn.disabled = true;
-    btn.innerHTML = `<span class="spinner"></span> Detectando…`;
+    // Si el modelo no está listo, mostrar overlay de carga (o error)
+    if (!state.quadscanReady) {
+      if (state.quadscanFailed) {
+        showToast("IA no disponible en este dispositivo. Ajustá a mano.");
+        return;
+      }
+      // Mostrar overlay con progreso en vivo y esperar
+      showLibOverlay({
+        icon: "🎯",
+        name: "IA de precisión",
+        status: "Preparando detector…",
+        percent: preloadState.quadscan || 0.05,
+        meta: "El primer escaneo descarga el modelo (~4.5 MB)",
+        note: "Después queda cacheado y es instantáneo.",
+      });
+      try {
+        await loadQuadscan({ silent: true });
+      } catch (e) {
+        hideLibOverlay();
+        showToast("No pudimos cargar la IA. Ajustá a mano.");
+        return;
+      }
+      hideLibOverlay();
+    }
 
-    // Dejar que el browser pinte el spinner antes del cómputo
+    const btn = $("#cropAuto");
+    btn.disabled = true;
+    const old = btn.textContent;
+    btn.textContent = "⏳ Detectando…";
+
+    // Dejar que el browser pinte el spinner
     await new Promise((r) => setTimeout(r, 40));
 
     try {
       const t0 = performance.now();
-      const result = await window.scanic.scanDocument(cropImg);
+      const result = await state.quadscanInstance.scan(cropImg);
       const ms = Math.round(performance.now() - t0);
 
       if (!result || !result.success || !result.corners) {
@@ -1393,23 +1660,18 @@
       const w = cropImg.naturalWidth;
       const h = cropImg.naturalHeight;
       const { topLeft, topRight, bottomRight, bottomLeft } = result.corners;
-
-      // Bounding box de los 4 puntos
       const xs = [topLeft.x, topRight.x, bottomRight.x, bottomLeft.x];
       const ys = [topLeft.y, topRight.y, bottomRight.y, bottomLeft.y];
-      const pad = 0.005; // pequeño margen para no cortar el borde
+      const pad = 0.005;
 
       state.crop.x1 = clamp(Math.min(...xs) / w - pad, 0, 1);
       state.crop.y1 = clamp(Math.min(...ys) / h - pad, 0, 1);
       state.crop.x2 = clamp(Math.max(...xs) / w + pad, 0, 1);
       state.crop.y2 = clamp(Math.max(...ys) / h + pad, 0, 1);
-
-      // Reset zoom/pan para ver bien el resultado
       state.crop.zoom = 1;
       state.crop.panX = 0;
       state.crop.panY = 0;
       applyCropTransform();
-
       layoutHandles();
       drawCropRect();
       buzz(20);
@@ -1421,14 +1683,11 @@
         ? `Bordes detectados ✨ ${conf}% · ${ms}ms`
         : `Bordes detectados ✨ ${ms}ms`;
       showToast(msg);
-
-      state.scanicAvailable = true;
     } catch (e) {
-      console.error("[scanic]", e);
+      console.error("[autoDetect]", e);
       showToast("Error al detectar: " + (e.message || "desconocido"));
     } finally {
-      btn.disabled = false;
-      btn.innerHTML = old;
+      updateAutoDetectBtn();
     }
   }
 
@@ -1927,131 +2186,6 @@
   const ocrActions = $("#ocrActions");
   const ocrRing = $("#ocrRing");
 
-  const libOverlay = $("#libOverlay");
-  const libIcon = $("#libIcon");
-  const libNameEl = $("#libName");
-  const libStatusEl = $("#libStatus");
-  const libBarFill = $("#libBarFill");
-  const libMetaEl = $("#libMeta");
-  const libNoteEl = $("#libNote");
-  const libCancelBtn = $("#libCancel");
-  const preloadChip = $("#preloadChip");
-  const preloadTxt = $("#preloadTxt");
-  const preloadPct = $("#preloadPct");
-
-  let currentLibURL = null;
-  const preloadState = { tesseract: 0 };
-
-  function updatePreloadChip() {
-    const vals = Object.values(preloadState);
-    if (!vals.length) return;
-    const numericVals = vals.map((v) => typeof v === "number" ? v : 0);
-    const avg = numericVals.reduce((a, b) => a + b, 0) / numericVals.length;
-    const allDone = vals.every((v) => v === 1);
-    const anyError = vals.some((v) => v === "error");
-
-    preloadChip.classList.add("show");
-    preloadChip.classList.remove("error", "done");
-
-    if (anyError && !allDone) {
-      preloadChip.classList.add("error");
-      preloadTxt.textContent = "OCR no disponible";
-      preloadPct.textContent = "⚠";
-      clearTimeout(preloadChip._hideTimer);
-      preloadChip._hideTimer = setTimeout(() => preloadChip.classList.remove("show"), 5000);
-      return;
-    }
-    if (allDone) {
-      preloadChip.classList.add("done");
-      preloadTxt.textContent = "OCR listo";
-      preloadPct.textContent = "✓";
-      clearTimeout(preloadChip._hideTimer);
-      preloadChip._hideTimer = setTimeout(() => preloadChip.classList.remove("show"), 2200);
-    } else {
-      preloadTxt.textContent = "Preparando OCR…";
-      preloadPct.textContent = Math.round(avg * 100) + "%";
-    }
-  }
-
-  function showLibOverlay({ icon, name, status, percent, meta, note }) {
-    libIcon.textContent = icon || "⚙️";
-    libIcon.classList.toggle("spin", !percent || percent < 1);
-    libNameEl.textContent = name || "Preparando…";
-    libStatusEl.textContent = status || "";
-    libBarFill.style.width = Math.round((percent || 0) * 100) + "%";
-    libMetaEl.textContent = meta || "";
-    libNoteEl.textContent = note || "";
-    libCancelBtn.style.display = currentLibURL ? "" : "none";
-    libOverlay.classList.add("show");
-  }
-  function hideLibOverlay() { libOverlay.classList.remove("show"); }
-  libCancelBtn.addEventListener("click", () => {
-    if (currentLibURL) {
-      LibraryLoader.abort(currentLibURL);
-      showToast("Descarga cancelada. Podés reintentar.");
-    }
-    hideLibOverlay();
-  });
-
-  function handleProgress(state, { silent = false, label = "", icon = "⚙️", trackPreload = null } = {}) {
-    if (trackPreload && preloadState[trackPreload] !== undefined) {
-      if (state.phase === "download") {
-        preloadState[trackPreload] = state.total ? state.percent : 0;
-        updatePreloadChip();
-      } else if (state.phase === "fallback") {
-        preloadState[trackPreload] = Math.max(preloadState[trackPreload] || 0, 0.1);
-        updatePreloadChip();
-      } else if (state.phase === "ready") {
-        preloadState[trackPreload] = 1;
-        updatePreloadChip();
-      } else if (state.phase === "error") {
-        preloadState[trackPreload] = "error";
-        updatePreloadChip();
-      }
-    }
-    if (silent) return;
-
-    if (state.phase === "download") {
-      const pct = state.total ? Math.round(state.percent * 100) : 0;
-      const meta = state.total
-        ? `${LibraryLoader.fmtBytes(state.loaded)} / ${LibraryLoader.fmtBytes(state.total)} · ${pct}%${
-            state.eta > 0 ? " · ~" + LibraryLoader.fmtTime(state.eta) + " restantes" : ""
-          }`
-        : `${LibraryLoader.fmtBytes(state.loaded)} descargados`;
-      showLibOverlay({
-        icon, name: label,
-        status: "Descargando…",
-        percent: state.total ? state.percent : 0.1,
-        meta,
-        note: "Solo la primera vez. Después queda cacheado.",
-      });
-    } else if (state.phase === "fallback") {
-      showLibOverlay({
-        icon, name: label,
-        status: "Descargando (progreso no disponible)…",
-        percent: 0.5,
-        meta: "El servidor no permite medir el progreso",
-        note: "Puede tardar unos segundos. Solo la primera vez.",
-      });
-    } else if (state.phase === "injecting") {
-      showLibOverlay({
-        icon, name: label,
-        status: "Inicializando motor…",
-        percent: 0.95,
-        meta: "",
-        note: "",
-      });
-    } else if (state.phase === "ready") {
-      showLibOverlay({
-        icon: "✅", name: label,
-        status: "¡Listo!", percent: 1, meta: "", note: "",
-      });
-      setTimeout(hideLibOverlay, 350);
-    } else if (state.phase === "error") {
-      hideLibOverlay();
-    }
-  }
-
   const TESSERACT_URL = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
   let tesseractPromise = null;
 
@@ -2060,12 +2194,13 @@
     currentLibURL = TESSERACT_URL;
     const { promise } = LibraryLoader.load(TESSERACT_URL, {
       name: "Motor OCR",
-      onProgress: (state) => {
-        handleProgress(state, {
+      onProgress: (st) => {
+        handleProgress(st, {
           silent,
           label: "Motor OCR",
           icon: "📝",
           trackPreload,
+          showCancel: !silent,
         });
       },
     });
@@ -2610,43 +2745,25 @@
   }
 
   /* =========================================================
-     BOOT
+     BOOT — preload de Quadscan y Tesseract
      ========================================================= */
   (async function boot() {
     await refreshLibraryCount();
-
-    // Verificar Scanic
-    if (window.scanic && typeof window.scanic.scanDocument === "function") {
-      state.scanicAvailable = true;
-      console.log("[OMG Scan] Scanic listo:", Object.keys(window.scanic).join(", "));
-    } else {
-      console.warn("[OMG Scan] Scanic no disponible al boot. Reintentando...");
-      let tries = 0;
-      const check = setInterval(() => {
-        tries++;
-        if (window.scanic && typeof window.scanic.scanDocument === "function") {
-          clearInterval(check);
-          state.scanicAvailable = true;
-          console.log("[OMG Scan] Scanic listo (retry " + tries + ")");
-        } else if (tries > 50) {
-          clearInterval(check);
-          console.warn("[OMG Scan] Scanic no se expuso después de 5s");
-        }
-      }, 100);
-    }
+    updateAutoDetectBtn();
 
     const params = new URLSearchParams(location.search);
     const action = params.get("action");
     if (action === "scan") { show("camera"); await startCamera(); }
     else if (action === "library") { openLibrary(); }
 
-    // Preload: solo Tesseract (Scanic ya está cargado, es síncrono)
-    const startPreload = () => preloadTesseract();
-    if ("requestIdleCallback" in window) {
-      requestIdleCallback(startPreload, { timeout: 5000 });
-    } else {
-      setTimeout(startPreload, 3000);
-    }
+    // Preload de Quadscan apenas carga el DOM. No esperamos idle.
+    // Es la única forma de tener el detector listo cuando el usuario
+    // toca "Auto-detectar" en los primeros segundos.
+    setTimeout(() => {
+      preloadQuadscan();
+      // Tesseract va después, es menos urgente
+      setTimeout(preloadTesseract, 5000);
+    }, 800);
   })();
 })();
 </script>
