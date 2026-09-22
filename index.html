@@ -505,7 +505,7 @@
     margin-top:2px;line-height:1.4
   }
 
-  /* Preload chip (solo Tesseract ahora) */
+  /* Preload chip (solo Tesseract) */
   .preload-chip{
     position:absolute;top:calc(env(safe-area-inset-top) + 12px);left:16px;
     background:rgba(255,255,255,.05);border:1px solid var(--stroke);
@@ -592,7 +592,7 @@
       <span class="count" id="libCount" style="display:none">0</span>
     </button>
 
-    <div class="hint">by Ohmygoch · v1.2.3</div>
+    <div class="hint">by Ohmygoch · v1.3.0</div>
   </section>
 
   <!-- ============== CAMERA ============== -->
@@ -843,6 +843,8 @@
 
 <div class="toast" id="toast"></div>
 
+<!-- Scanic: detector de bordes (~100 KB, bloquea parser ~200ms) -->
+<script src="https://unpkg.com/scanic/dist/scanic.umd.cjs"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js" defer></script>
 <script>
 (() => {
@@ -901,119 +903,6 @@
   }
   function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
   function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
-
-  // ============================================================
-  // LibraryLoader
-  // ============================================================
-  const LibraryLoader = (() => {
-    const cache = new Map();
-
-    function fmtBytes(n) {
-      if (!n || n < 0) return "?";
-      if (n < 1024) return n + " B";
-      if (n < 1024 * 1024) return (n / 1024).toFixed(0) + " KB";
-      return (n / 1024 / 1024).toFixed(1) + " MB";
-    }
-    function fmtTime(sec) {
-      if (!isFinite(sec) || sec < 0) return "";
-      if (sec < 1) return "menos de 1s";
-      if (sec < 60) return Math.round(sec) + "s";
-      return Math.round(sec / 60) + "min";
-    }
-    function emit(entry, state) {
-      for (const fn of entry.subscribers) {
-        try { fn(state); } catch (_) {}
-      }
-    }
-
-    async function fetchWithProgress(url, signal, onProgress) {
-      const res = await fetch(url, { signal, cache: "default" });
-      if (!res.ok) throw new Error("HTTP " + res.status);
-      const total = +res.headers.get("content-length") || 0;
-      const reader = res.body.getReader();
-      const chunks = [];
-      let loaded = 0;
-      const t0 = performance.now();
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-        loaded += value.length;
-        const elapsed = (performance.now() - t0) / 1000;
-        const speed = loaded / Math.max(0.1, elapsed);
-        const eta = total > 0 ? (total - loaded) / Math.max(1, speed) : -1;
-        onProgress({ loaded, total, percent: total ? loaded / total : 0, speed, eta });
-      }
-      return new Blob(chunks, { type: "application/javascript" });
-    }
-
-    async function injectScript(src) {
-      return new Promise((resolve, reject) => {
-        const s = document.createElement("script");
-        s.src = src; s.async = true;
-        s.onload = () => resolve();
-        s.onerror = () => reject(new Error("Error al cargar script"));
-        document.head.appendChild(s);
-      });
-    }
-
-    function load(url, { name, onProgress } = {}) {
-      if (cache.has(url)) {
-        const entry = cache.get(url);
-        if (onProgress) entry.subscribers.add(onProgress);
-        return { promise: entry.promise, entry };
-      }
-      const entry = {
-        subscribers: new Set(),
-        controller: new AbortController(),
-        blobUrl: null,
-        promise: null,
-      };
-      if (onProgress) entry.subscribers.add(onProgress);
-      cache.set(url, entry);
-
-      entry.promise = (async () => {
-        try {
-          emit(entry, { phase: "download", name, loaded: 0, total: 0, percent: 0 });
-          let usedFallback = false;
-          try {
-            const blob = await fetchWithProgress(url, entry.controller.signal, (p) => {
-              emit(entry, { phase: "download", name, ...p });
-            });
-            entry.blobUrl = URL.createObjectURL(blob);
-            emit(entry, { phase: "injecting", name, percent: 1 });
-            await injectScript(entry.blobUrl);
-          } catch (fetchErr) {
-            if (fetchErr.name === "AbortError") throw fetchErr;
-            console.warn("[LibraryLoader] fetch falló, usando <script> directo:", fetchErr.message);
-            usedFallback = true;
-            emit(entry, { phase: "fallback", name });
-            await injectScript(url);
-          }
-          emit(entry, { phase: "ready", name, percent: 1, usedFallback });
-          return usedFallback ? url : entry.blobUrl;
-        } catch (err) {
-          emit(entry, { phase: "error", name, error: err });
-          cache.delete(url);
-          throw err;
-        }
-      })();
-      return { promise: entry.promise, entry };
-    }
-
-    function abort(url) {
-      const entry = cache.get(url);
-      if (entry && entry.controller) {
-        entry.controller.abort();
-        emit(entry, { phase: "cancelled" });
-      }
-    }
-    function isReady(url) {
-      const entry = cache.get(url);
-      return !!(entry && entry.blobUrl);
-    }
-    return { load, abort, isReady, fmtBytes, fmtTime };
-  })();
 
   /* =========================================================
      INDEXEDDB
@@ -1119,6 +1008,7 @@
     renderedCanvas: null,
     currentDocId: null,
     isPainting: false,
+    scanicAvailable: false,
   };
 
   const FILTERS = [
@@ -1128,6 +1018,106 @@
     { id: "gray",     label: "Escáner" },
     { id: "bw",       label: "B/N" },
   ];
+
+  /* =========================================================
+     LIBRARY LOADER (solo Tesseract ahora)
+     ========================================================= */
+  const LibraryLoader = (() => {
+    const cache = new Map();
+    function fmtBytes(n) {
+      if (!n || n < 0) return "?";
+      if (n < 1024) return n + " B";
+      if (n < 1024 * 1024) return (n / 1024).toFixed(0) + " KB";
+      return (n / 1024 / 1024).toFixed(1) + " MB";
+    }
+    function fmtTime(sec) {
+      if (!isFinite(sec) || sec < 0) return "";
+      if (sec < 1) return "menos de 1s";
+      if (sec < 60) return Math.round(sec) + "s";
+      return Math.round(sec / 60) + "min";
+    }
+    function emit(entry, state) {
+      for (const fn of entry.subscribers) { try { fn(state); } catch (_) {} }
+    }
+    async function fetchWithProgress(url, signal, onProgress) {
+      const res = await fetch(url, { signal, cache: "default" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const total = +res.headers.get("content-length") || 0;
+      const reader = res.body.getReader();
+      const chunks = [];
+      let loaded = 0;
+      const t0 = performance.now();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        loaded += value.length;
+        const elapsed = (performance.now() - t0) / 1000;
+        const speed = loaded / Math.max(0.1, elapsed);
+        const eta = total > 0 ? (total - loaded) / Math.max(1, speed) : -1;
+        onProgress({ loaded, total, percent: total ? loaded / total : 0, speed, eta });
+      }
+      return new Blob(chunks, { type: "application/javascript" });
+    }
+    async function injectScript(src) {
+      return new Promise((resolve, reject) => {
+        const s = document.createElement("script");
+        s.src = src; s.async = true;
+        s.onload = () => resolve();
+        s.onerror = () => reject(new Error("Error al cargar script"));
+        document.head.appendChild(s);
+      });
+    }
+    function load(url, { name, onProgress } = {}) {
+      if (cache.has(url)) {
+        const entry = cache.get(url);
+        if (onProgress) entry.subscribers.add(onProgress);
+        return { promise: entry.promise, entry };
+      }
+      const entry = {
+        subscribers: new Set(),
+        controller: new AbortController(),
+        blobUrl: null,
+        promise: null,
+      };
+      if (onProgress) entry.subscribers.add(onProgress);
+      cache.set(url, entry);
+      entry.promise = (async () => {
+        try {
+          emit(entry, { phase: "download", name, loaded: 0, total: 0, percent: 0 });
+          let usedFallback = false;
+          try {
+            const blob = await fetchWithProgress(url, entry.controller.signal, (p) => {
+              emit(entry, { phase: "download", name, ...p });
+            });
+            entry.blobUrl = URL.createObjectURL(blob);
+            emit(entry, { phase: "injecting", name, percent: 1 });
+            await injectScript(entry.blobUrl);
+          } catch (fetchErr) {
+            if (fetchErr.name === "AbortError") throw fetchErr;
+            usedFallback = true;
+            emit(entry, { phase: "fallback", name });
+            await injectScript(url);
+          }
+          emit(entry, { phase: "ready", name, percent: 1, usedFallback });
+          return usedFallback ? url : entry.blobUrl;
+        } catch (err) {
+          emit(entry, { phase: "error", name, error: err });
+          cache.delete(url);
+          throw err;
+        }
+      })();
+      return { promise: entry.promise, entry };
+    }
+    function abort(url) {
+      const entry = cache.get(url);
+      if (entry && entry.controller) {
+        entry.controller.abort();
+        emit(entry, { phase: "cancelled" });
+      }
+    }
+    return { load, abort, fmtBytes, fmtTime };
+  })();
 
   /* =========================================================
      CÁMARA
@@ -1294,7 +1284,6 @@
       img.src = dataURL;
     });
   }
-
   async function rotateCrop(degrees) {
     if (!state.rawCapture) return;
     cropImg.style.opacity = "0.35";
@@ -1305,9 +1294,7 @@
     applyCropTransform();
     cropImg.onload = () => {
       cropImg.style.opacity = "1";
-      requestAnimationFrame(() => {
-        layoutHandles(); drawCropRect();
-      });
+      requestAnimationFrame(() => { layoutHandles(); drawCropRect(); });
     };
     cropImg.src = state.rawCapture;
     buzz(12);
@@ -1315,7 +1302,6 @@
 
   const activePointers = new Map();
   let gesture = null;
-
   cropStage.addEventListener("pointerdown", (e) => {
     activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (activePointers.size === 2) {
@@ -1337,15 +1323,12 @@
     }
     cropStage.setPointerCapture(e.pointerId);
   });
-
   cropStage.addEventListener("pointermove", (e) => {
     if (!activePointers.has(e.pointerId)) return;
     activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-
     if (gesture?.mode === "pinch" && activePointers.size >= 2) {
       const [a, b] = [...activePointers.values()];
-      const newZoom = clamp(gesture.initialZoom * (dist(a, b) / gesture.initialDist), 1, 5);
-      state.crop.zoom = newZoom;
+      state.crop.zoom = clamp(gesture.initialZoom * (dist(a, b) / gesture.initialDist), 1, 5);
       applyCropTransform();
       return;
     }
@@ -1367,7 +1350,6 @@
       layoutHandles(); drawCropRect();
     }
   });
-
   const endPointer = (e) => {
     activePointers.delete(e.pointerId);
     if (activePointers.size === 0) gesture = null;
@@ -1377,300 +1359,73 @@
   cropStage.addEventListener("pointercancel", endPointer);
 
   /* =========================================================
-     OVERLAY DE DESCARGA (heavy libs)
+     SCANIC — detección de bordes
      ========================================================= */
-  const libOverlay = $("#libOverlay");
-  const libIcon = $("#libIcon");
-  const libNameEl = $("#libName");
-  const libStatusEl = $("#libStatus");
-  const libBarFill = $("#libBarFill");
-  const libMetaEl = $("#libMeta");
-  const libNoteEl = $("#libNote");
-  const libCancelBtn = $("#libCancel");
-  const preloadChip = $("#preloadChip");
-  const preloadTxt = $("#preloadTxt");
-  const preloadPct = $("#preloadPct");
-
-  let currentLibURL = null;
-  // Solo trackeamos Tesseract ahora (OpenCV no se preloadea)
-  const preloadState = { tesseract: 0 };
-
-  function updatePreloadChip() {
-    const vals = Object.values(preloadState);
-    if (!vals.length) return;
-    const numericVals = vals.map((v) => typeof v === "number" ? v : 0);
-    const avg = numericVals.reduce((a, b) => a + b, 0) / numericVals.length;
-    const allDone = vals.every((v) => v === 1);
-    const anyError = vals.some((v) => v === "error");
-
-    preloadChip.classList.add("show");
-    preloadChip.classList.remove("error", "done");
-
-    if (anyError && !allDone) {
-      preloadChip.classList.add("error");
-      preloadTxt.textContent = "OCR no disponible";
-      preloadPct.textContent = "⚠";
-      clearTimeout(preloadChip._hideTimer);
-      preloadChip._hideTimer = setTimeout(() => preloadChip.classList.remove("show"), 5000);
-      return;
-    }
-    if (allDone) {
-      preloadChip.classList.add("done");
-      preloadTxt.textContent = "OCR listo";
-      preloadPct.textContent = "✓";
-      clearTimeout(preloadChip._hideTimer);
-      preloadChip._hideTimer = setTimeout(() => preloadChip.classList.remove("show"), 2200);
-    } else {
-      preloadTxt.textContent = "Preparando OCR…";
-      preloadPct.textContent = Math.round(avg * 100) + "%";
-    }
-  }
-
-  function showLibOverlay({ icon, name, status, percent, meta, note }) {
-    libIcon.textContent = icon || "⚙️";
-    libIcon.classList.toggle("spin", !percent || percent < 1);
-    libNameEl.textContent = name || "Preparando…";
-    libStatusEl.textContent = status || "";
-    libBarFill.style.width = Math.round((percent || 0) * 100) + "%";
-    libMetaEl.textContent = meta || "";
-    libNoteEl.textContent = note || "";
-    libCancelBtn.style.display = currentLibURL ? "" : "none";
-    libOverlay.classList.add("show");
-  }
-  function hideLibOverlay() { libOverlay.classList.remove("show"); }
-  libCancelBtn.addEventListener("click", () => {
-    if (currentLibURL) {
-      LibraryLoader.abort(currentLibURL);
-      showToast("Descarga cancelada. Podés reintentar.");
-    }
-    hideLibOverlay();
-  });
-
-  function handleProgress(state, { silent = false, label = "", icon = "⚙️", trackPreload = null } = {}) {
-    if (trackPreload && preloadState[trackPreload] !== undefined) {
-      if (state.phase === "download") {
-        preloadState[trackPreload] = state.total ? state.percent : 0;
-        updatePreloadChip();
-      } else if (state.phase === "fallback") {
-        preloadState[trackPreload] = Math.max(preloadState[trackPreload] || 0, 0.1);
-        updatePreloadChip();
-      } else if (state.phase === "ready") {
-        preloadState[trackPreload] = 1;
-        updatePreloadChip();
-      } else if (state.phase === "error") {
-        preloadState[trackPreload] = "error";
-        updatePreloadChip();
-      }
-    }
-
-    if (silent) return;
-
-    if (state.phase === "download") {
-      const pct = state.total ? Math.round(state.percent * 100) : 0;
-      const meta = state.total
-        ? `${LibraryLoader.fmtBytes(state.loaded)} / ${LibraryLoader.fmtBytes(state.total)} · ${pct}%${
-            state.eta > 0 ? " · ~" + LibraryLoader.fmtTime(state.eta) + " restantes" : ""
-          }`
-        : `${LibraryLoader.fmtBytes(state.loaded)} descargados`;
-      showLibOverlay({
-        icon, name: label,
-        status: "Descargando…",
-        percent: state.total ? state.percent : 0.1,
-        meta,
-        note: "Solo la primera vez. Después queda cacheado.",
-      });
-    } else if (state.phase === "fallback") {
-      showLibOverlay({
-        icon, name: label,
-        status: "Descargando (progreso no disponible)…",
-        percent: 0.5,
-        meta: "El servidor no permite medir el progreso",
-        note: "Puede tardar unos segundos. Solo la primera vez.",
-      });
-    } else if (state.phase === "compiling") {
-      showLibOverlay({
-        icon, name: label,
-        status: "Inicializando motor…",
-        percent: 0.95,
-        meta: "Compilando WASM (2-4 segundos)",
-        note: "El dispositivo puede sentirse lento un momento. Es normal.",
-      });
-    } else if (state.phase === "ready") {
-      showLibOverlay({
-        icon: "✅", name: label,
-        status: "¡Listo!", percent: 1, meta: "", note: "",
-      });
-      setTimeout(hideLibOverlay, 350);
-    } else if (state.phase === "error") {
-      hideLibOverlay();
-    }
-  }
-
-  /* =========================================================
-     OPENCV — carga SOLO bajo demanda (no preload)
-     ========================================================= */
-  const OPENCV_URL = "https://docs.opencv.org/4.8.0/opencv.js";
-  let opencvPromise = null;
-  let opencvReady = false;
-
-  async function ensureOpenCV({ silent = false } = {}) {
-    if (opencvPromise) return opencvPromise;
-
-    opencvPromise = (async () => {
-      currentLibURL = OPENCV_URL;
-
-      // 1) Mostrar overlay inicial antes de bloquear
-      if (!silent) {
-        showLibOverlay({
-          icon: "✨",
-          name: "Detector de bordes",
-          status: "Conectando…",
-          percent: 0.02,
-          meta: "",
-          note: "Solo la primera vez. Después queda cacheado.",
-        });
-        // Dejar que el browser pinte el overlay antes del bloqueo
-        await new Promise((r) => setTimeout(r, 60));
-      }
-
-      // 2) Cargar el script (progreso real vía handleProgress)
-      const { promise } = LibraryLoader.load(OPENCV_URL, {
-        name: "Detector de bordes",
-        onProgress: (state) => {
-          // El "ready" de LibraryLoader significa "script tag cargado", NO "WASM listo"
-          const phaseOverride = state.phase === "ready" ? "compiling" : state.phase;
-          handleProgress(
-            { ...state, phase: phaseOverride },
-            { silent, label: "Detector de bordes", icon: "✨" }
-          );
-        },
-      });
-      await promise;
-
-      // 3) Esperar WASM compile / runtime init
-      if (window.cv && window.cv.Mat) {
-        opencvReady = true;
-      } else {
-        await new Promise((resolve, reject) => {
-          window.cv = window.cv || {};
-          const t0 = Date.now();
-          const check = setInterval(() => {
-            if (window.cv && window.cv.Mat) {
-              clearInterval(check);
-              opencvReady = true;
-              resolve();
-            } else if (Date.now() - t0 > 60000) {
-              clearInterval(check);
-              reject(new Error("OpenCV tardó demasiado en inicializar"));
-            }
-          }, 150);
-          window.cv.onRuntimeInitialized = () => {
-            clearInterval(check);
-            opencvReady = true;
-            resolve();
-          };
-        });
-      }
-
-      // 4) Listo de verdad
-      if (!silent) {
-        handleProgress(
-          { phase: "ready", name: "Detector de bordes" },
-          { silent, label: "Detector de bordes", icon: "✨" }
-        );
-      }
-      return window.cv;
-    })();
-
-    opencvPromise.catch(() => { opencvPromise = null; });
-    return opencvPromise;
-  }
-
   async function autoDetectEdges() {
     const btn = $("#cropAuto");
     const old = btn.innerHTML;
+
+    if (!window.scanic) {
+      showToast("Detector no disponible. Recargá la página.");
+      return;
+    }
+    if (!cropImg.complete || !cropImg.naturalWidth) {
+      showToast("Esperá a que la imagen cargue");
+      return;
+    }
+
     btn.disabled = true;
     btn.innerHTML = `<span class="spinner"></span> Detectando…`;
+
+    // Dejar que el browser pinte el spinner antes del cómputo
+    await new Promise((r) => setTimeout(r, 40));
+
     try {
-      await ensureOpenCV({ silent: false });
-      const cv = window.cv;
+      const t0 = performance.now();
+      const result = await window.scanic.scanDocument(cropImg);
+      const ms = Math.round(performance.now() - t0);
 
-      const maxW = 800;
-      const scale = Math.min(1, maxW / cropImg.naturalWidth);
-      const w = Math.round(cropImg.naturalWidth * scale);
-      const h = Math.round(cropImg.naturalHeight * scale);
-
-      const tmp = document.createElement("canvas");
-      tmp.width = w; tmp.height = h;
-      tmp.getContext("2d").drawImage(cropImg, 0, 0, w, h);
-
-      const src = cv.imread(tmp);
-      const gray = new cv.Mat();
-      cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-      const blur = new cv.Mat();
-      cv.GaussianBlur(gray, blur, new cv.Size(5, 5), 0);
-      const edges = new cv.Mat();
-      cv.Canny(blur, edges, 50, 150);
-      const kern = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 5));
-      cv.dilate(edges, edges, kern);
-      kern.delete();
-
-      const contours = new cv.MatVector();
-      const hier = new cv.Mat();
-      cv.findContours(edges, contours, hier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
-
-      let best = null, bestArea = 0;
-      for (let i = 0; i < contours.size(); i++) {
-        const c = contours.get(i);
-        const area = cv.contourArea(c);
-        if (area < (w * h) * 0.08) { c.delete(); continue; }
-        const peri = cv.arcLength(c, true);
-        const approx = new cv.Mat();
-        cv.approxPolyDP(c, approx, 0.02 * peri, true);
-        if (approx.rows === 4 && area > bestArea) {
-          bestArea = area;
-          if (best) best.delete();
-          best = approx.clone();
-        } else {
-          approx.delete();
-        }
-        c.delete();
-      }
-
-      let result = null;
-      if (best) {
-        const pts = [];
-        for (let i = 0; i < 4; i++) {
-          pts.push({ x: best.data32S[i*2] / w, y: best.data32S[i*2+1] / h });
-        }
-        const cx = pts.reduce((s, p) => s + p.x, 0) / 4;
-        const cy = pts.reduce((s, p) => s + p.y, 0) / 4;
-        pts.sort((a, b) => Math.atan2(a.y - cy, a.x - cx) - Math.atan2(b.y - cy, b.x - cx));
-        let start = pts.findIndex((p) => p.x < cx && p.y < cy);
-        if (start < 0) start = 0;
-        const ordered = [pts[start], pts[(start+1)%4], pts[(start+2)%4], pts[(start+3)%4]];
-        result = { tl: ordered[0], tr: ordered[1], br: ordered[2], bl: ordered[3] };
-        best.delete();
-      }
-      src.delete(); gray.delete(); blur.delete(); edges.delete();
-      contours.delete(); hier.delete();
-
-      if (!result) {
-        showToast("No pudimos detectar bordes. Ajustá a mano.");
+      if (!result || !result.success || !result.corners) {
+        showToast("No detectamos bordes. Ajustá a mano.");
         return;
       }
-      const xs = [result.tl.x, result.tr.x, result.br.x, result.bl.x];
-      const ys = [result.tl.y, result.tr.y, result.br.y, result.bl.y];
-      state.crop.x1 = clamp(Math.min(...xs) - 0.005, 0, 1);
-      state.crop.y1 = clamp(Math.min(...ys) - 0.005, 0, 1);
-      state.crop.x2 = clamp(Math.max(...xs) + 0.005, 0, 1);
-      state.crop.y2 = clamp(Math.max(...ys) + 0.005, 0, 1);
-      layoutHandles(); drawCropRect();
+
+      const w = cropImg.naturalWidth;
+      const h = cropImg.naturalHeight;
+      const { topLeft, topRight, bottomRight, bottomLeft } = result.corners;
+
+      // Bounding box de los 4 puntos
+      const xs = [topLeft.x, topRight.x, bottomRight.x, bottomLeft.x];
+      const ys = [topLeft.y, topRight.y, bottomRight.y, bottomLeft.y];
+      const pad = 0.005; // pequeño margen para no cortar el borde
+
+      state.crop.x1 = clamp(Math.min(...xs) / w - pad, 0, 1);
+      state.crop.y1 = clamp(Math.min(...ys) / h - pad, 0, 1);
+      state.crop.x2 = clamp(Math.max(...xs) / w + pad, 0, 1);
+      state.crop.y2 = clamp(Math.max(...ys) / h + pad, 0, 1);
+
+      // Reset zoom/pan para ver bien el resultado
+      state.crop.zoom = 1;
+      state.crop.panX = 0;
+      state.crop.panY = 0;
+      applyCropTransform();
+
+      layoutHandles();
+      drawCropRect();
       buzz(20);
-      showToast("Bordes detectados ✨ Ajustá si hace falta.");
+
+      const conf = typeof result.confidence === "number"
+        ? Math.round(result.confidence * 100)
+        : null;
+      const msg = conf != null
+        ? `Bordes detectados ✨ ${conf}% · ${ms}ms`
+        : `Bordes detectados ✨ ${ms}ms`;
+      showToast(msg);
+
+      state.scanicAvailable = true;
     } catch (e) {
-      console.error(e);
-      showToast(e.message || "Error en detección");
+      console.error("[scanic]", e);
+      showToast("Error al detectar: " + (e.message || "desconocido"));
     } finally {
       btn.disabled = false;
       btn.innerHTML = old;
@@ -2162,7 +1917,7 @@
   }
 
   /* =========================================================
-     OCR
+     OCR — tesseract.js
      ========================================================= */
   const ocrOverlay = $("#ocrOverlay");
   const ocrTitle = $("#ocrTitle");
@@ -2171,6 +1926,131 @@
   const ocrText = $("#ocrText");
   const ocrActions = $("#ocrActions");
   const ocrRing = $("#ocrRing");
+
+  const libOverlay = $("#libOverlay");
+  const libIcon = $("#libIcon");
+  const libNameEl = $("#libName");
+  const libStatusEl = $("#libStatus");
+  const libBarFill = $("#libBarFill");
+  const libMetaEl = $("#libMeta");
+  const libNoteEl = $("#libNote");
+  const libCancelBtn = $("#libCancel");
+  const preloadChip = $("#preloadChip");
+  const preloadTxt = $("#preloadTxt");
+  const preloadPct = $("#preloadPct");
+
+  let currentLibURL = null;
+  const preloadState = { tesseract: 0 };
+
+  function updatePreloadChip() {
+    const vals = Object.values(preloadState);
+    if (!vals.length) return;
+    const numericVals = vals.map((v) => typeof v === "number" ? v : 0);
+    const avg = numericVals.reduce((a, b) => a + b, 0) / numericVals.length;
+    const allDone = vals.every((v) => v === 1);
+    const anyError = vals.some((v) => v === "error");
+
+    preloadChip.classList.add("show");
+    preloadChip.classList.remove("error", "done");
+
+    if (anyError && !allDone) {
+      preloadChip.classList.add("error");
+      preloadTxt.textContent = "OCR no disponible";
+      preloadPct.textContent = "⚠";
+      clearTimeout(preloadChip._hideTimer);
+      preloadChip._hideTimer = setTimeout(() => preloadChip.classList.remove("show"), 5000);
+      return;
+    }
+    if (allDone) {
+      preloadChip.classList.add("done");
+      preloadTxt.textContent = "OCR listo";
+      preloadPct.textContent = "✓";
+      clearTimeout(preloadChip._hideTimer);
+      preloadChip._hideTimer = setTimeout(() => preloadChip.classList.remove("show"), 2200);
+    } else {
+      preloadTxt.textContent = "Preparando OCR…";
+      preloadPct.textContent = Math.round(avg * 100) + "%";
+    }
+  }
+
+  function showLibOverlay({ icon, name, status, percent, meta, note }) {
+    libIcon.textContent = icon || "⚙️";
+    libIcon.classList.toggle("spin", !percent || percent < 1);
+    libNameEl.textContent = name || "Preparando…";
+    libStatusEl.textContent = status || "";
+    libBarFill.style.width = Math.round((percent || 0) * 100) + "%";
+    libMetaEl.textContent = meta || "";
+    libNoteEl.textContent = note || "";
+    libCancelBtn.style.display = currentLibURL ? "" : "none";
+    libOverlay.classList.add("show");
+  }
+  function hideLibOverlay() { libOverlay.classList.remove("show"); }
+  libCancelBtn.addEventListener("click", () => {
+    if (currentLibURL) {
+      LibraryLoader.abort(currentLibURL);
+      showToast("Descarga cancelada. Podés reintentar.");
+    }
+    hideLibOverlay();
+  });
+
+  function handleProgress(state, { silent = false, label = "", icon = "⚙️", trackPreload = null } = {}) {
+    if (trackPreload && preloadState[trackPreload] !== undefined) {
+      if (state.phase === "download") {
+        preloadState[trackPreload] = state.total ? state.percent : 0;
+        updatePreloadChip();
+      } else if (state.phase === "fallback") {
+        preloadState[trackPreload] = Math.max(preloadState[trackPreload] || 0, 0.1);
+        updatePreloadChip();
+      } else if (state.phase === "ready") {
+        preloadState[trackPreload] = 1;
+        updatePreloadChip();
+      } else if (state.phase === "error") {
+        preloadState[trackPreload] = "error";
+        updatePreloadChip();
+      }
+    }
+    if (silent) return;
+
+    if (state.phase === "download") {
+      const pct = state.total ? Math.round(state.percent * 100) : 0;
+      const meta = state.total
+        ? `${LibraryLoader.fmtBytes(state.loaded)} / ${LibraryLoader.fmtBytes(state.total)} · ${pct}%${
+            state.eta > 0 ? " · ~" + LibraryLoader.fmtTime(state.eta) + " restantes" : ""
+          }`
+        : `${LibraryLoader.fmtBytes(state.loaded)} descargados`;
+      showLibOverlay({
+        icon, name: label,
+        status: "Descargando…",
+        percent: state.total ? state.percent : 0.1,
+        meta,
+        note: "Solo la primera vez. Después queda cacheado.",
+      });
+    } else if (state.phase === "fallback") {
+      showLibOverlay({
+        icon, name: label,
+        status: "Descargando (progreso no disponible)…",
+        percent: 0.5,
+        meta: "El servidor no permite medir el progreso",
+        note: "Puede tardar unos segundos. Solo la primera vez.",
+      });
+    } else if (state.phase === "injecting") {
+      showLibOverlay({
+        icon, name: label,
+        status: "Inicializando motor…",
+        percent: 0.95,
+        meta: "",
+        note: "",
+      });
+    } else if (state.phase === "ready") {
+      showLibOverlay({
+        icon: "✅", name: label,
+        status: "¡Listo!", percent: 1, meta: "", note: "",
+      });
+      setTimeout(hideLibOverlay, 350);
+    } else if (state.phase === "error") {
+      hideLibOverlay();
+    }
+  }
 
   const TESSERACT_URL = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
   let tesseractPromise = null;
@@ -2734,13 +2614,33 @@
      ========================================================= */
   (async function boot() {
     await refreshLibraryCount();
+
+    // Verificar Scanic
+    if (window.scanic && typeof window.scanic.scanDocument === "function") {
+      state.scanicAvailable = true;
+      console.log("[OMG Scan] Scanic listo:", Object.keys(window.scanic).join(", "));
+    } else {
+      console.warn("[OMG Scan] Scanic no disponible al boot. Reintentando...");
+      let tries = 0;
+      const check = setInterval(() => {
+        tries++;
+        if (window.scanic && typeof window.scanic.scanDocument === "function") {
+          clearInterval(check);
+          state.scanicAvailable = true;
+          console.log("[OMG Scan] Scanic listo (retry " + tries + ")");
+        } else if (tries > 50) {
+          clearInterval(check);
+          console.warn("[OMG Scan] Scanic no se expuso después de 5s");
+        }
+      }, 100);
+    }
+
     const params = new URLSearchParams(location.search);
     const action = params.get("action");
     if (action === "scan") { show("camera"); await startCamera(); }
     else if (action === "library") { openLibrary(); }
 
-    // Preload: SOLO Tesseract (corre en Web Worker, NO bloquea el hilo principal)
-    // OpenCV se carga SOLO bajo demanda (bloquea el hilo al compilar el WASM).
+    // Preload: solo Tesseract (Scanic ya está cargado, es síncrono)
     const startPreload = () => preloadTesseract();
     if ("requestIdleCallback" in window) {
       requestIdleCallback(startPreload, { timeout: 5000 });

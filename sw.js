@@ -1,6 +1,6 @@
-/* OMG Scan · Service Worker v1.2.3 */
+/* OMG Scan · Service Worker v1.3.0 */
 
-const VERSION       = 'v1.2.3';
+const VERSION       = 'v1.3.0';
 const SHELL_CACHE   = `omgscan-shell-${VERSION}`;
 const RUNTIME_CACHE = `omgscan-runtime-${VERSION}`;
 
@@ -57,11 +57,10 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Whitelist de CDNs
+  // Whitelist de CDNs (Scanic, Tesseract, pdf-lib, fonts)
   const whitelisted =
     url.origin === self.location.origin ||
     url.hostname === 'cdn.jsdelivr.net' ||
-    url.hostname === 'docs.opencv.org' ||
     url.hostname === 'unpkg.com' ||
     url.hostname === 'fonts.googleapis.com' ||
     url.hostname === 'fonts.gstatic.com';
