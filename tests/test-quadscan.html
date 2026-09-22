@@ -111,7 +111,7 @@
   const progressFill = $("#progressFill");
 
   let currentImage = null;
-  let quadscan = null;  // instancia
+  let quadscan = null;
 
   function log(msg, cls = "info") {
     const time = new Date().toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -133,7 +133,7 @@
     progressFill.style.width = Math.round(pct * 100) + "%";
   }
 
-  // Detectar si Quadscan cargó
+  // Detectar si Quadscan cargó y extraer la clase del namespace
   (function waitForQuadscan() {
     let tries = 0;
     const check = setInterval(() => {
@@ -142,7 +142,10 @@
         clearInterval(check);
         setLibStatus(true, "Quadscan cargado");
         log("Quadscan disponible. Tipo: " + typeof window.Quadscan, "ok");
-        log("Claves del global: " + Object.keys(window.Quadscan).join(", "), "info");
+        log("Claves: " + Object.keys(window.Quadscan).join(", "), "info");
+        // Extraer la clase del namespace
+        const Cls = window.Quadscan.Quadscan || window.Quadscan;
+        log("Clase extraída: " + (typeof Cls === "function" ? "✅ función/constructor" : "❌ " + typeof Cls), "info");
         $("#btnInit").disabled = false;
         return;
       }
@@ -181,7 +184,7 @@
     e.target.value = "";
   });
 
-  // Inicializar modelo (descarga 4.8 MB la primera vez)
+  // Inicializar modelo
   $("#btnInit").addEventListener("click", async () => {
     const btn = $("#btnInit");
     btn.disabled = true;
@@ -190,8 +193,12 @@
     log("Creando instancia Quadscan…");
     setProgress(0.05);
     try {
-      // La instancia se crea con new Quadscan()
-      quadscan = new window.Quadscan();
+      // Extraer la clase del namespace (puede ser window.Quadscan o window.Quadscan.Quadscan)
+      const Cls = window.Quadscan.Quadscan || window.Quadscan;
+      if (typeof Cls !== "function") {
+        throw new Error("No se pudo extraer la clase Quadscan del namespace. Tipo: " + typeof Cls);
+      }
+      quadscan = new Cls();
       log("Instancia creada. Métodos: " + Object.getOwnPropertyNames(Object.getPrototypeOf(quadscan)).join(", "), "info");
       log("Inicializando modelo (descarga ~4.8 MB la primera vez)…");
       setProgress(0.3);
