@@ -1,6 +1,6 @@
-/* OMG Scan · Service Worker v1.5.0 */
+/* OMG Scan · Service Worker v1.6.0 */
 
-const VERSION       = 'v1.5.0';
+const VERSION       = 'v1.6.0';
 const SHELL_CACHE   = `omgscan-shell-${VERSION}`;
 const RUNTIME_CACHE = `omgscan-runtime-${VERSION}`;
 

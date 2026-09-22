@@ -136,11 +136,42 @@
   .sweep.go{animation:sweep .55s ease-out}
   @keyframes sweep{0%{top:0;opacity:1}100%{top:100%;opacity:0}}
 
+  /* Live detection toggle */
+  .live-toggle{
+    position:absolute;top:calc(env(safe-area-inset-top) + 62px);right:16px;z-index:6;
+    width:44px;height:44px;border-radius:50%;
+    background:rgba(0,0,0,.55);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+    border:1px solid var(--stroke);color:var(--paper);
+    display:flex;align-items:center;justify-content:center;
+    transition:all .15s;font-size:18px
+  }
+  .live-toggle.on{background:var(--laser);color:var(--ink);border-color:var(--laser)}
+  .live-toggle.busy{opacity:.55}
+  .live-overlay{
+    position:absolute;inset:0;width:100%;height:100%;
+    pointer-events:none;z-index:4;display:none
+  }
+  .live-overlay.show{display:block}
+  .live-overlay polygon{
+    fill:rgba(200,255,46,.08);
+    stroke:var(--laser);stroke-width:2;
+    vector-effect:non-scaling-stroke;
+    filter:drop-shadow(0 0 8px rgba(200,255,46,.6))
+  }
+  .live-badge{
+    position:absolute;top:calc(env(safe-area-inset-top) + 118px);left:50%;
+    transform:translateX(-50%);
+    background:rgba(200,255,46,.12);border:1px solid rgba(200,255,46,.35);
+    color:var(--laser);padding:6px 14px;border-radius:999px;
+    font-size:12px;font-weight:700;display:none;z-index:5
+  }
+  .live-badge.show{display:inline-block}
+
   /* ============ CROP (quadrilateral) ============ */
   #crop{background:#000;overflow:hidden}
   .crop-stage{
     position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-    padding:70px 20px 130px;overflow:hidden;touch-action:none
+    padding:70px 20px 150px;overflow:hidden;touch-action:none
   }
   .crop-wrap{
     position:relative;max-width:100%;max-height:100%;
@@ -179,7 +210,7 @@
   }
   .crop-bar{
     position:absolute;bottom:calc(env(safe-area-inset-bottom) + 20px);left:0;right:0;
-    display:flex;justify-content:center;gap:10px;padding:0 16px;z-index:5;flex-wrap:wrap
+    display:flex;justify-content:center;gap:8px;padding:0 12px;z-index:5;flex-wrap:wrap
   }
   .btn{
     padding:14px 20px;border-radius:14px;font-weight:700;font-size:15px;
@@ -193,25 +224,29 @@
   .btn.danger{background:rgba(255,90,95,.12);border-color:rgba(255,90,95,.35);color:#ffb1b3}
   .btn.laser{background:rgba(200,255,46,.14);border-color:rgba(200,255,46,.4);color:var(--laser)}
   .btn:disabled{opacity:.4;pointer-events:none}
-  .btn.sm{padding:10px 14px;font-size:13px;border-radius:12px}
+  .btn.sm{padding:10px 12px;font-size:13px;border-radius:12px}
   .btn.cargando{background:rgba(108,77,255,.2);border-color:rgba(108,77,255,.5);color:#c5b8ff}
   .btn.fallado{background:rgba(255,90,95,.12);border-color:rgba(255,90,95,.35);color:#ffb1b3}
+  .btn.toggle-on{
+    background:rgba(200,255,46,.18);border-color:var(--laser);color:var(--laser)
+  }
   .top-bar{
     position:absolute;top:calc(env(safe-area-inset-top) + 10px);left:0;right:0;
     display:flex;justify-content:space-between;align-items:center;padding:0 16px;z-index:6
   }
   .top-bar .title{font-weight:700;font-size:16px;letter-spacing:-.2px}
   .crop-hint{
-    position:absolute;bottom:calc(env(safe-area-inset-bottom) + 92px);left:50%;transform:translateX(-50%);
+    position:absolute;bottom:calc(env(safe-area-inset-bottom) + 158px);left:50%;transform:translateX(-50%);
     font-size:12px;color:var(--muted);background:rgba(0,0,0,.55);backdrop-filter:blur(8px);
     padding:6px 14px;border-radius:999px;white-space:nowrap;z-index:4;pointer-events:none
   }
 
+  /* Botones rotación: abajo a la derecha */
   .crop-floating-tools{
     position:absolute;
     right:16px;
-    top:calc(env(safe-area-inset-top) + 62px);
-    display:flex;flex-direction:column;gap:10px;z-index:6
+    bottom:calc(env(safe-area-inset-bottom) + 92px);
+    display:flex;flex-direction:row;gap:10px;z-index:5
   }
   .crop-tool{
     width:46px;height:46px;border-radius:50%;
@@ -226,6 +261,19 @@
     stroke-width:2;stroke-linecap:round;stroke-linejoin:round
   }
   .crop-tool.rotate-flip svg{transform:scaleX(-1)}
+
+  /* Lupa durante el drag de esquinas */
+  .crop-magnifier{
+    position:absolute;width:130px;height:130px;border-radius:50%;
+    border:3px solid var(--laser);
+    box-shadow:0 0 0 3px rgba(0,0,0,.65), 0 12px 32px rgba(0,0,0,.6);
+    overflow:hidden;pointer-events:none;z-index:25;
+    display:none;background:#000;
+    transform:translate(-50%,-100%);
+    will-change:left,top
+  }
+  .crop-magnifier.show{display:block}
+  .crop-magnifier canvas{display:block;width:100%;height:100%}
 
   /* ============ FILTERS ============ */
   #filters{background:var(--ink)}
@@ -612,13 +660,17 @@
       <span class="count" id="libCount" style="display:none">0</span>
     </button>
 
-    <div class="hint">by Ohmygoch · v1.5.0</div>
+    <div class="hint">by Ohmygoch · v1.6.0</div>
   </section>
 
   <!-- ============== CAMERA ============== -->
   <section id="camera" class="view">
     <video id="video" playsinline autoplay muted></video>
     <div class="sweep" id="sweep"></div>
+
+    <svg class="live-overlay" id="liveOverlay" viewBox="0 0 100 100" preserveAspectRatio="none">
+      <polygon id="livePoly" points=""/>
+    </svg>
 
     <svg class="frame-guide" viewBox="0 0 100 100" preserveAspectRatio="none">
       <path d="M4,14 L4,6 Q4,4 6,4 L14,4"/>
@@ -631,6 +683,9 @@
       <button class="chip" id="btnClose">✕ Cerrar</button>
       <button class="chip" id="btnFlash">⚡ Flash</button>
     </div>
+
+    <button class="live-toggle" id="btnLiveDetect" title="Detección en vivo">🎯</button>
+    <div class="live-badge" id="liveBadge">Documento detectado ✓</div>
 
     <div class="quality" id="quality">
       <div class="dot"></div>
@@ -681,6 +736,7 @@
       </button>
     </div>
     <div class="crop-stage" id="cropStage">
+      <div class="crop-magnifier" id="cropMagnifier"><canvas></canvas></div>
       <div class="crop-wrap" id="cropWrap">
         <img id="cropImg" alt="" />
         <svg class="crop-svg" id="cropSvg" viewBox="0 0 1 1" preserveAspectRatio="none">
@@ -697,6 +753,7 @@
     <div class="crop-bar">
       <button class="btn ghost sm" id="cropFull">Usar todo</button>
       <button class="btn laser sm" id="cropAuto">⏳ Preparando IA…</button>
+      <button class="btn ghost sm toggle-on" id="cropStraighten">📐 Enderezar ✓</button>
       <button class="btn primary" id="cropNext">✨ Aplicar</button>
     </div>
   </section>
@@ -926,27 +983,23 @@
   function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
 
   /* =========================================================
-     PERSPECTIVE WARP (homografía 3x3)
+     HOMOGRAFÍA + WARP
      ========================================================= */
-  // Resuelve sistema lineal A·x = b por eliminación gaussiana (n=8)
   function solveLinearSystem(A, b) {
     const n = A.length;
     const M = A.map((row, i) => [...row, b[i]]);
     for (let i = 0; i < n; i++) {
-      // Pivote
       let maxRow = i;
       for (let k = i + 1; k < n; k++) {
         if (Math.abs(M[k][i]) > Math.abs(M[maxRow][i])) maxRow = k;
       }
       if (maxRow !== i) [M[i], M[maxRow]] = [M[maxRow], M[i]];
       if (Math.abs(M[i][i]) < 1e-10) throw new Error("Sistema singular");
-      // Eliminación
       for (let k = i + 1; k < n; k++) {
         const f = M[k][i] / M[i][i];
         for (let j = i; j <= n; j++) M[k][j] -= f * M[i][j];
       }
     }
-    // Sustitución hacia atrás
     const x = new Array(n).fill(0);
     for (let i = n - 1; i >= 0; i--) {
       let s = M[i][n];
@@ -956,14 +1009,8 @@
     return x;
   }
 
-  // Calcula la homografía H que mapea los puntos destino (0,0),(W,0),(W,H),(0,H)
-  // a los puntos origen pts[0..3]. Devuelve [h11,h12,h13,h21,h22,h23,h31,h32,h33] con h33=1.
-  // Nota: mapea DST → SRC para poder recorrer el destino hacia atrás (inverse mapping).
   function computeHomography(dstPoints, srcPoints) {
-    // dstPoints: esquinas del rect destino [(0,0),(W,0),(W,H),(0,H)]
-    // srcPoints: esquinas del polígono origen (en la imagen fuente)
-    const A = [];
-    const b = [];
+    const A = [], b = [];
     for (let i = 0; i < 4; i++) {
       const { x, y } = dstPoints[i];
       const { x: u, y: v } = srcPoints[i];
@@ -974,85 +1021,46 @@
     return [...h, 1];
   }
 
-  // Warp por homografía con interpolación bilineal.
-  // srcCanvas: canvas origen
-  // corners: [{x,y},...] en coords normalizadas 0..1 de srcCanvas (TL, TR, BR, BL)
   function warpPerspective(srcCanvas, corners) {
     const sw = srcCanvas.width, sh = srcCanvas.height;
-
-    // Puntos origen en coords de canvas
     const srcPts = corners.map((c) => ({ x: c.x * sw, y: c.y * sh }));
-
-    // Calcular tamaño del destino: ancho = máximo entre top y bottom, alto = máximo entre izq y der
-    const wTop  = Math.hypot(srcPts[1].x - srcPts[0].x, srcPts[1].y - srcPts[0].y);
-    const wBot  = Math.hypot(srcPts[2].x - srcPts[3].x, srcPts[2].y - srcPts[3].y);
-    const hL    = Math.hypot(srcPts[3].x - srcPts[0].x, srcPts[3].y - srcPts[0].y);
-    const hR    = Math.hypot(srcPts[2].x - srcPts[1].x, srcPts[2].y - srcPts[1].y);
-
+    const wTop = Math.hypot(srcPts[1].x - srcPts[0].x, srcPts[1].y - srcPts[0].y);
+    const wBot = Math.hypot(srcPts[2].x - srcPts[3].x, srcPts[2].y - srcPts[3].y);
+    const hL = Math.hypot(srcPts[3].x - srcPts[0].x, srcPts[3].y - srcPts[0].y);
+    const hR = Math.hypot(srcPts[2].x - srcPts[1].x, srcPts[2].y - srcPts[1].y);
     const dstW = Math.max(1, Math.round(Math.max(wTop, wBot)));
     const dstH = Math.max(1, Math.round(Math.max(hL, hR)));
-
-    // Homografía: dst(0,0)→src TL, dst(W,0)→src TR, dst(W,H)→src BR, dst(0,H)→src BL
-    const dstPts = [
-      { x: 0, y: 0 },
-      { x: dstW, y: 0 },
-      { x: dstW, y: dstH },
-      { x: 0, y: dstH },
-    ];
+    const dstPts = [{ x: 0, y: 0 }, { x: dstW, y: 0 }, { x: dstW, y: dstH }, { x: 0, y: dstH }];
     const H = computeHomography(dstPts, srcPts);
-
-    // Datos origen
     const srcCtx = srcCanvas.getContext("2d", { willReadFrequently: true });
     const srcData = srcCtx.getImageData(0, 0, sw, sh);
     const srcPix = srcData.data;
-
-    // Datos destino
     const dst = document.createElement("canvas");
-    dst.width = dstW;
-    dst.height = dstH;
+    dst.width = dstW; dst.height = dstH;
     const dstCtx = dst.getContext("2d");
     const dstData = dstCtx.createImageData(dstW, dstH);
     const dstPix = dstData.data;
-
-    const h0 = H[0], h1 = H[1], h2 = H[2];
-    const h3 = H[3], h4 = H[4], h5 = H[5];
-    const h6 = H[6], h7 = H[7], h8 = H[8];
-
+    const h0=H[0],h1=H[1],h2=H[2],h3=H[3],h4=H[4],h5=H[5],h6=H[6],h7=H[7],h8=H[8];
     let di = 0;
     for (let y = 0; y < dstH; y++) {
-      const yh6 = y * h6;
-      const yh7 = y * h7;
+      const yh6 = y * h6, yh7 = y * h7;
       for (let x = 0; x < dstW; x++) {
         const denom = x * h6 + yh7 + h8;
-        const sx = (x * h0 + yh6_ + h2); // placeholder, replaced below
-        // (evitamos typos: recalculamos limpio)
-        const sxf = (h0 * x + h1 * y + h2);
-        const syf = (h3 * x + h4 * y + h5);
-        const sxn = sxf / denom;
-        const syn = syf / denom;
-
-        const x0 = sxn | 0;
-        const y0 = syn | 0;
-        const x1 = x0 + 1;
-        const y1 = y0 + 1;
-        const fx = sxn - x0;
-        const fy = syn - y0;
-        const ifx = 1 - fx;
-        const ify = 1 - fy;
-
+        const sxn = (h0*x + h1*y + h2) / denom;
+        const syn = (h3*x + h4*y + h5) / denom;
+        const x0 = sxn | 0, y0 = syn | 0;
+        const x1 = x0 + 1, y1 = y0 + 1;
+        const fx = sxn - x0, fy = syn - y0;
+        const ifx = 1 - fx, ify = 1 - fy;
         if (x0 < 0 || y0 < 0 || x1 >= sw || y1 >= sh) {
           dstPix[di] = 0; dstPix[di+1] = 0; dstPix[di+2] = 0; dstPix[di+3] = 255;
-          di += 4;
-          continue;
+          di += 4; continue;
         }
-
-        const i00 = (y0 * sw + x0) * 4;
-        const i10 = (y0 * sw + x1) * 4;
-        const i01 = (y1 * sw + x0) * 4;
-        const i11 = (y1 * sw + x1) * 4;
-
-        const w00 = ifx * ify, w10 = fx * ify, w01 = ifx * fy, w11 = fx * fy;
-
+        const i00 = (y0*sw + x0) * 4;
+        const i10 = (y0*sw + x1) * 4;
+        const i01 = (y1*sw + x0) * 4;
+        const i11 = (y1*sw + x1) * 4;
+        const w00 = ifx*ify, w10 = fx*ify, w01 = ifx*fy, w11 = fx*fy;
         dstPix[di]   = srcPix[i00]   * w00 + srcPix[i10]   * w10 + srcPix[i01]   * w01 + srcPix[i11]   * w11;
         dstPix[di+1] = srcPix[i00+1] * w00 + srcPix[i10+1] * w10 + srcPix[i01+1] * w01 + srcPix[i11+1] * w11;
         dstPix[di+2] = srcPix[i00+2] * w00 + srcPix[i10+2] * w10 + srcPix[i01+2] * w01 + srcPix[i11+2] * w11;
@@ -1064,12 +1072,192 @@
     return dst;
   }
 
-  // ¿Los 4 puntos forman casi un rect alineado a los ejes? → usar drawImage (más rápido)
   function isNearlyAxisRect(corners, tol = 0.008) {
     return Math.abs(corners[0].y - corners[1].y) < tol
         && Math.abs(corners[2].y - corners[3].y) < tol
         && Math.abs(corners[0].x - corners[3].x) < tol
         && Math.abs(corners[1].x - corners[2].x) < tol;
+  }
+
+  /* =========================================================
+     WEB WORKER para warp
+     ========================================================= */
+  const warpWorker = (() => {
+    const code = `
+      self.onmessage = function(e) {
+        const d = e.data;
+        if (d.type !== 'warp') return;
+        const { id, srcBuf, srcW, srcH, dstW, dstH, H } = d;
+        const srcPix = new Uint8ClampedArray(srcBuf);
+        const dstPix = new Uint8ClampedArray(dstW * dstH * 4);
+        const h0=H[0],h1=H[1],h2=H[2],h3=H[3],h4=H[4],h5=H[5],h6=H[6],h7=H[7],h8=H[8];
+        let di = 0;
+        for (let y = 0; y < dstH; y++) {
+          const yh6 = y * h6, yh7 = y * h7;
+          for (let x = 0; x < dstW; x++) {
+            const denom = x * h6 + yh7 + h8;
+            const sxn = (h0*x + h1*y + h2) / denom;
+            const syn = (h3*x + h4*y + h5) / denom;
+            const x0 = sxn | 0, y0 = syn | 0;
+            const x1 = x0 + 1, y1 = y0 + 1;
+            const fx = sxn - x0, fy = syn - y0;
+            const ifx = 1 - fx, ify = 1 - fy;
+            if (x0 < 0 || y0 < 0 || x1 >= srcW || y1 >= srcH) {
+              dstPix[di] = 0; dstPix[di+1] = 0; dstPix[di+2] = 0; dstPix[di+3] = 255;
+              di += 4; continue;
+            }
+            const i00 = (y0*srcW + x0) * 4;
+            const i10 = (y0*srcW + x1) * 4;
+            const i01 = (y1*srcW + x0) * 4;
+            const i11 = (y1*srcW + x1) * 4;
+            const w00 = ifx*ify, w10 = fx*ify, w01 = ifx*fy, w11 = fx*fy;
+            dstPix[di]   = srcPix[i00]   * w00 + srcPix[i10]   * w10 + srcPix[i01]   * w01 + srcPix[i11]   * w11;
+            dstPix[di+1] = srcPix[i00+1] * w00 + srcPix[i10+1] * w10 + srcPix[i01+1] * w01 + srcPix[i11+1] * w11;
+            dstPix[di+2] = srcPix[i00+2] * w00 + srcPix[i10+2] * w10 + srcPix[i01+2] * w01 + srcPix[i11+2] * w11;
+            dstPix[di+3] = 255;
+            di += 4;
+          }
+        }
+        self.postMessage({ id, dstBuf: dstPix.buffer }, [dstPix.buffer]);
+      };
+    `;
+    let worker = null;
+    try {
+      const blob = new Blob([code], { type: "application/javascript" });
+      worker = new Worker(URL.createObjectURL(blob));
+    } catch (e) {
+      console.warn("[warp-worker] No se pudo crear el worker:", e.message);
+    }
+    let seq = 0;
+    const pending = new Map();
+    if (worker) {
+      worker.onmessage = (e) => {
+        const { id, dstBuf } = e.data;
+        const cb = pending.get(id);
+        if (cb) { pending.delete(id); cb(dstBuf); }
+      };
+      worker.onerror = (e) => console.error("[warp-worker]", e.message);
+    }
+    return {
+      available: !!worker,
+      async warp(srcImageData, srcW, srcH, dstW, dstH, H) {
+        if (!worker) throw new Error("Worker no disponible");
+        const id = ++seq;
+        const promise = new Promise((resolve) => pending.set(id, resolve));
+        worker.postMessage({
+          type: "warp", id,
+          srcBuf: srcImageData.data.buffer,
+          srcW, srcH, dstW, dstH, H,
+        }, [srcImageData.data.buffer]);
+        const dstBuf = await promise;
+        return new ImageData(new Uint8ClampedArray(dstBuf), dstW, dstH);
+      },
+    };
+  })();
+
+  async function warpPerspectiveAsync(srcCanvas, corners) {
+    const sw = srcCanvas.width, sh = srcCanvas.height;
+    const srcPts = corners.map((c) => ({ x: c.x * sw, y: c.y * sh }));
+    const wTop = Math.hypot(srcPts[1].x - srcPts[0].x, srcPts[1].y - srcPts[0].y);
+    const wBot = Math.hypot(srcPts[2].x - srcPts[3].x, srcPts[2].y - srcPts[3].y);
+    const hL = Math.hypot(srcPts[3].x - srcPts[0].x, srcPts[3].y - srcPts[0].y);
+    const hR = Math.hypot(srcPts[2].x - srcPts[1].x, srcPts[2].y - srcPts[1].y);
+    const dstW = Math.max(1, Math.round(Math.max(wTop, wBot)));
+    const dstH = Math.max(1, Math.round(Math.max(hL, hR)));
+    const dstPts = [{ x: 0, y: 0 }, { x: dstW, y: 0 }, { x: dstW, y: dstH }, { x: 0, y: dstH }];
+    const H = computeHomography(dstPts, srcPts);
+
+    if (!warpWorker.available) {
+      return warpPerspective(srcCanvas, corners);
+    }
+
+    const srcCtx = srcCanvas.getContext("2d", { willReadFrequently: true });
+    const srcData = srcCtx.getImageData(0, 0, sw, sh);
+    const copy = new ImageData(new Uint8ClampedArray(srcData.data), sw, sh);
+    const dstData = await warpWorker.warp(copy, sw, sh, dstW, dstH, H);
+
+    const out = document.createElement("canvas");
+    out.width = dstW; out.height = dstH;
+    out.getContext("2d").putImageData(dstData, 0, 0);
+    return out;
+  }
+
+  /* =========================================================
+     ENDEREZAR
+     ========================================================= */
+  function detectSkewAngle(canvas) {
+    const w = canvas.width, h = canvas.height;
+    const maxW = 700;
+    const scale = Math.min(1, maxW / w);
+    const sw = Math.round(w * scale), sh = Math.round(h * scale);
+    const small = document.createElement("canvas");
+    small.width = sw; small.height = sh;
+    const sctx = small.getContext("2d", { willReadFrequently: true });
+    sctx.drawImage(canvas, 0, 0, sw, sh);
+    const data = sctx.getImageData(0, 0, sw, sh).data;
+    const gray = new Uint8Array(sw * sh);
+    for (let i = 0, j = 0; i < data.length; i += 4, j++) {
+      gray[j] = (data[i] * 0.299 + data[i+1] * 0.587 + data[i+2] * 0.114) | 0;
+    }
+    const edges = new Uint8Array(sw * sh);
+    for (let y = 1; y < sh - 1; y++) {
+      for (let x = 1; x < sw - 1; x++) {
+        const i = y * sw + x;
+        const gx = gray[i + 1] - gray[i - 1];
+        const gy = gray[i + sw] - gray[i - sw];
+        const mag = Math.abs(gx) + Math.abs(gy);
+        edges[i] = mag > 60 ? 255 : 0;
+      }
+    }
+    let bestAngle = 0, bestScore = -1;
+    for (let a = -6; a <= 6; a += 0.25) {
+      const rad = (a * Math.PI) / 180;
+      const cos = Math.cos(rad), sin = Math.sin(rad);
+      const buckets = new Float32Array(sh);
+      for (let y = 1; y < sh - 1; y++) {
+        for (let x = 1; x < sw - 1; x++) {
+          const i = y * sw + x;
+          if (!edges[i]) continue;
+          const projY = Math.round(-x * sin + y * cos) + sh;
+          if (projY >= 0 && projY < sh) buckets[projY] += 1;
+        }
+      }
+      let sum = 0, sum2 = 0;
+      for (let i = 0; i < sh; i++) { sum += buckets[i]; sum2 += buckets[i] * buckets[i]; }
+      const mean = sum / sh;
+      const variance = sum2 / sh - mean * mean;
+      if (variance > bestScore) { bestScore = variance; bestAngle = a; }
+    }
+    return bestAngle;
+  }
+
+  function straightenCanvas(canvas) {
+    const angle = detectSkewAngle(canvas);
+    if (Math.abs(angle) < 0.4) return { canvas, angle: 0 };
+    const rad = (-angle * Math.PI) / 180;
+    const w = canvas.width, h = canvas.height;
+    const cos = Math.cos(rad), sin = Math.sin(rad);
+    const nw = Math.round(Math.abs(w * cos) + Math.abs(h * sin));
+    const nh = Math.round(Math.abs(w * sin) + Math.abs(h * cos));
+    const out = document.createElement("canvas");
+    out.width = nw; out.height = nh;
+    const ctx = out.getContext("2d");
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, nw, nh);
+    ctx.translate(nw / 2, nh / 2);
+    ctx.rotate(rad);
+    ctx.drawImage(canvas, -w / 2, -h / 2);
+    const innerScale = 1 / (Math.abs(cos) + Math.abs(sin) * (h / w));
+    const cw = Math.round(w * innerScale * 0.99);
+    const ch = Math.round(h * innerScale * 0.99);
+    const cropped = document.createElement("canvas");
+    cropped.width = cw; cropped.height = ch;
+    cropped.getContext("2d").drawImage(
+      out,
+      Math.round((nw - cw) / 2), Math.round((nh - ch) / 2), cw, ch,
+      0, 0, cw, ch
+    );
+    return { canvas: cropped, angle };
   }
 
   /* =========================================================
@@ -1171,7 +1359,7 @@
     rawCapture: null,
     rotation: 0,
     crop: {
-      corners: DEFAULT_CORNERS(),  // TL, TR, BR, BL en coords normalizadas 0..1
+      corners: DEFAULT_CORNERS(),
       zoom: 1, panX: 0, panY: 0,
     },
     cropped: null,
@@ -1190,6 +1378,10 @@
     quadscanPromise: null,
     quadscanReady: false,
     quadscanFailed: false,
+    autoStraighten: true,
+    liveDetect: false,
+    liveTimer: null,
+    liveBusy: false,
   };
 
   const FILTERS = [
@@ -1304,6 +1496,11 @@
      CÁMARA
      ========================================================= */
   const video = $("#video");
+  const liveOverlay = $("#liveOverlay");
+  const livePoly = $("#livePoly");
+  const liveBadge = $("#liveBadge");
+  const btnLiveDetect = $("#btnLiveDetect");
+
   async function startCamera() {
     stopCamera();
     try {
@@ -1329,6 +1526,13 @@
   }
   function stopCamera() {
     stopQualityLoop();
+    if (state.liveDetect) {
+      state.liveDetect = false;
+      stopLiveDetection();
+      liveOverlay.classList.remove("show");
+      liveBadge.classList.remove("show");
+      btnLiveDetect.classList.remove("on");
+    }
     if (state.stream) {
       state.stream.getTracks().forEach((t) => t.stop());
       state.stream = null;
@@ -1396,7 +1600,90 @@
   }
 
   /* =========================================================
-     CROP (quadrilateral)
+     LIVE DETECTION
+     ========================================================= */
+  const liveCanvas = document.createElement("canvas");
+  liveCanvas.width = 320;
+  liveCanvas.height = 240;
+  const liveCtx = liveCanvas.getContext("2d");
+
+  btnLiveDetect.addEventListener("click", async () => {
+    if (!state.quadscanReady) {
+      showToast("La IA todavía está cargando…");
+      return;
+    }
+    state.liveDetect = !state.liveDetect;
+    btnLiveDetect.classList.toggle("on", state.liveDetect);
+    if (state.liveDetect) {
+      liveOverlay.classList.add("show");
+      startLiveDetection();
+      showToast("Detección en vivo activada");
+    } else {
+      liveOverlay.classList.remove("show");
+      liveBadge.classList.remove("show");
+      stopLiveDetection();
+      showToast("Detección en vivo desactivada");
+    }
+    buzz(10);
+  });
+
+  function startLiveDetection() {
+    stopLiveDetection();
+    state.liveTimer = setInterval(runLiveDetectionOnce, 1000);
+    runLiveDetectionOnce();
+  }
+  function stopLiveDetection() {
+    if (state.liveTimer) { clearInterval(state.liveTimer); state.liveTimer = null; }
+    state.liveBusy = false;
+  }
+
+  async function runLiveDetectionOnce() {
+    if (state.liveBusy) return;
+    if (!state.stream || video.readyState < 2) return;
+    if (!state.quadscanReady || !state.quadscanInstance) return;
+    state.liveBusy = true;
+    btnLiveDetect.classList.add("busy");
+    try {
+      const vw = video.videoWidth, vh = video.videoHeight;
+      const targetW = 320;
+      const targetH = Math.round(vh * (targetW / vw));
+      if (liveCanvas.width !== targetW || liveCanvas.height !== targetH) {
+        liveCanvas.width = targetW;
+        liveCanvas.height = targetH;
+      }
+      liveCtx.drawImage(video, 0, 0, targetW, targetH);
+      const result = await state.quadscanInstance.scan(liveCanvas);
+      if (result && result.success && result.corners) {
+        const { topLeft, topRight, bottomRight, bottomLeft } = result.corners;
+        const nx = (p) => (p.x / liveCanvas.width) * 100;
+        const ny = (p) => (p.y / liveCanvas.height) * 100;
+        livePoly.setAttribute("points", [
+          `${nx(topLeft)},${ny(topLeft)}`,
+          `${nx(topRight)},${ny(topRight)}`,
+          `${nx(bottomRight)},${ny(bottomRight)}`,
+          `${nx(bottomLeft)},${ny(bottomLeft)}`,
+        ].join(" "));
+        const conf = typeof result.confidence === "number" ? result.confidence : 0;
+        if (conf >= 0.7) {
+          liveBadge.classList.add("show");
+          liveBadge.textContent = `Documento detectado ✓ ${Math.round(conf * 100)}%`;
+        } else {
+          liveBadge.classList.remove("show");
+        }
+      } else {
+        livePoly.setAttribute("points", "");
+        liveBadge.classList.remove("show");
+      }
+    } catch (_) {
+      // silencioso
+    } finally {
+      state.liveBusy = false;
+      btnLiveDetect.classList.remove("busy");
+    }
+  }
+
+  /* =========================================================
+     CROP
      ========================================================= */
   const cropImg = $("#cropImg");
   const cropWrap = $("#cropWrap");
@@ -1405,6 +1692,12 @@
   const cropDark = $("#cropDark");
   const cropStage = $("#cropStage");
   const cropHint = $("#cropHint");
+  const cropMagnifier = $("#cropMagnifier");
+  const cropMagCanvas = cropMagnifier.querySelector("canvas");
+  const MAG_SIZE = 130;
+  const MAG_ZOOM = 3;
+  cropMagCanvas.width = MAG_SIZE;
+  cropMagCanvas.height = MAG_SIZE;
 
   function openCrop() {
     cropImg.style.opacity = "1";
@@ -1431,13 +1724,10 @@
 
   function drawCropOverlay() {
     const c = state.crop.corners;
-    // Polígono principal
     cropPoly.setAttribute("points", cornersToPointsAttr(c));
-    // Sombra exterior: rect completo + subpath del polígono invertido por evenodd
     const outer = "M0,0 L1,0 L1,1 L0,1 Z";
     const inner = `M${c[0].x},${c[0].y} L${c[1].x},${c[1].y} L${c[2].x},${c[2].y} L${c[3].x},${c[3].y} Z`;
     cropDark.setAttribute("d", outer + " " + inner);
-    // Handles
     $$(".crop-handle", cropWrap).forEach((h, i) => {
       const p = c[i];
       h.style.left = (p.x * 100) + "%";
@@ -1482,25 +1772,21 @@
     const newData = await rotateImageDataURL(state.rawCapture, degrees);
     state.rawCapture = newData;
     state.rotation = ((state.rotation + degrees) % 360 + 360) % 360;
-
-    // Rotar corners. Si degrees es +90 (CW) o -90 (CCW).
     const c = state.crop.corners;
     let rotated;
     if (degrees === 90) {
-      // (x,y) → (1-y, x). Nuevo orden: [BLr, TLr, TRr, BRr]
       rotated = [
-        { x: 1 - c[3].y, y: c[3].x }, // old BL → new TL
-        { x: 1 - c[0].y, y: c[0].x }, // old TL → new TR
-        { x: 1 - c[1].y, y: c[1].x }, // old TR → new BR
-        { x: 1 - c[2].y, y: c[2].x }, // old BR → new BL
+        { x: 1 - c[3].y, y: c[3].x },
+        { x: 1 - c[0].y, y: c[0].x },
+        { x: 1 - c[1].y, y: c[1].x },
+        { x: 1 - c[2].y, y: c[2].x },
       ];
     } else if (degrees === -90) {
-      // (x,y) → (y, 1-x). Nuevo orden: [TRr, BRr, BLr, TLr]
       rotated = [
-        { x: c[1].y, y: 1 - c[1].x }, // old TR → new TL
-        { x: c[2].y, y: 1 - c[2].x }, // old BR → new TR
-        { x: c[3].y, y: 1 - c[3].x }, // old BL → new BR
-        { x: c[0].y, y: 1 - c[0].x }, // old TL → new BL
+        { x: c[1].y, y: 1 - c[1].x },
+        { x: c[2].y, y: 1 - c[2].x },
+        { x: c[3].y, y: 1 - c[3].x },
+        { x: c[0].y, y: 1 - c[0].x },
       ];
     } else {
       rotated = c;
@@ -1512,7 +1798,6 @@
     state.crop.panX = 0;
     state.crop.panY = 0;
     applyCropTransform();
-
     cropImg.onload = () => {
       cropImg.style.opacity = "1";
       requestAnimationFrame(() => drawCropOverlay());
@@ -1521,18 +1806,58 @@
     buzz(12);
   }
 
-  /* ------- Gestos: pinch, pan y drag de handles ------- */
+  /* --------- Gestos: pinch, pan, drag de handles + lupa --------- */
   const activePointers = new Map();
   let gesture = null;
 
+  function updateMagnifier(clientX, clientY) {
+    const stageRect = cropStage.getBoundingClientRect();
+    let mx = clientX - stageRect.left;
+    let my = clientY - stageRect.top - MAG_SIZE * 0.55 - 40;
+    if (my < 10) my = clientY - stageRect.top + MAG_SIZE * 0.55 + 40;
+    mx = clamp(mx, MAG_SIZE / 2 + 4, stageRect.width - MAG_SIZE / 2 - 4);
+    cropMagnifier.style.left = mx + "px";
+    cropMagnifier.style.top = my + "px";
+    const ctx = cropMagCanvas.getContext("2d");
+    ctx.clearRect(0, 0, MAG_SIZE, MAG_SIZE);
+    if (!cropImg.complete || !cropImg.naturalWidth) return;
+    const rect = cropImg.getBoundingClientRect();
+    const nx = (clientX - rect.left) / rect.width;
+    const ny = (clientY - rect.top) / rect.height;
+    const px = nx * cropImg.naturalWidth;
+    const py = ny * cropImg.naturalHeight;
+    const srcSize = MAG_SIZE / MAG_ZOOM;
+    try {
+      ctx.drawImage(
+        cropImg,
+        px - srcSize / 2, py - srcSize / 2, srcSize, srcSize,
+        0, 0, MAG_SIZE, MAG_SIZE
+      );
+      ctx.strokeStyle = "rgba(200,255,46,.9)";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(MAG_SIZE / 2, MAG_SIZE / 2 - 12);
+      ctx.lineTo(MAG_SIZE / 2, MAG_SIZE / 2 + 12);
+      ctx.moveTo(MAG_SIZE / 2 - 12, MAG_SIZE / 2);
+      ctx.lineTo(MAG_SIZE / 2 + 12, MAG_SIZE / 2);
+      ctx.stroke();
+    } catch (_) {}
+  }
+  function showMagnifier(x, y) {
+    cropMagnifier.classList.add("show");
+    updateMagnifier(x, y);
+  }
+  function hideMagnifier() {
+    cropMagnifier.classList.remove("show");
+  }
+
   cropStage.addEventListener("pointerdown", (e) => {
     activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-
     if (activePointers.size === 2) {
       const [a, b] = [...activePointers.values()];
       gesture = { mode: "pinch", initialDist: dist(a, b), initialZoom: state.crop.zoom };
-      // Cancelar drag de handle si había uno
       $$(".crop-handle.active").forEach((h) => h.classList.remove("active"));
+      hideMagnifier();
       return;
     }
     if (activePointers.size === 1) {
@@ -1541,6 +1866,7 @@
         const i = +handle.dataset.i;
         gesture = { mode: "handle", i, pointerId: e.pointerId };
         handle.classList.add("active");
+        showMagnifier(e.clientX, e.clientY);
       } else if (state.crop.zoom > 1.05) {
         gesture = {
           mode: "pan", pointerId: e.pointerId,
@@ -1574,6 +1900,7 @@
       const ny = clamp((e.clientY - r.top) / r.height, 0, 1);
       state.crop.corners[gesture.i] = { x: nx, y: ny };
       drawCropOverlay();
+      updateMagnifier(e.clientX, e.clientY);
     }
   });
 
@@ -1582,15 +1909,14 @@
     if (activePointers.size === 0) {
       gesture = null;
       $$(".crop-handle.active").forEach((h) => h.classList.remove("active"));
+      hideMagnifier();
     }
     if (gesture?.mode === "pinch" && activePointers.size < 2) gesture = null;
   };
   cropStage.addEventListener("pointerup", endPointer);
   cropStage.addEventListener("pointercancel", endPointer);
 
-  /* ------- Validación mínima: área cubierta ------- */
   function polygonArea(corners) {
-    // Shoelace
     let a = 0;
     for (let i = 0; i < 4; i++) {
       const p = corners[i], q = corners[(i + 1) % 4];
@@ -1624,10 +1950,8 @@
     const avg = numericVals.reduce((a, b) => a + b, 0) / numericVals.length;
     const allDone = vals.every((v) => v === 1);
     const anyError = vals.some((v) => v === "error");
-
     preloadChip.classList.add("show");
     preloadChip.classList.remove("error", "done");
-
     if (allDone) {
       preloadChip.classList.add("done");
       preloadTxt.textContent = "Todo listo";
@@ -1682,7 +2006,6 @@
       }
     }
     if (silent) return;
-
     if (st.phase === "download") {
       const pct = st.total ? Math.round(st.percent * 100) : 0;
       const meta = st.total
@@ -1691,12 +2014,9 @@
           }`
         : `${LibraryLoader.fmtBytes(st.loaded)} descargados`;
       showLibOverlay({
-        icon, name: label,
-        status: "Descargando…",
+        icon, name: label, status: "Descargando…",
         percent: st.total ? st.percent : 0.1,
-        meta,
-        note: "Solo la primera vez. Después queda cacheado.",
-        showCancel,
+        meta, note: "Solo la primera vez. Después queda cacheado.", showCancel,
       });
     } else if (st.phase === "fallback") {
       showLibOverlay({
@@ -1704,19 +2024,17 @@
         status: "Descargando (progreso no disponible)…",
         percent: 0.5,
         meta: "El servidor no permite medir el progreso",
-        note: "Puede tardar unos segundos. Solo la primera vez.",
-        showCancel,
+        note: "Puede tardar unos segundos. Solo la primera vez.", showCancel,
       });
     } else if (st.phase === "injecting") {
       showLibOverlay({
-        icon, name: label,
-        status: "Inicializando motor…",
+        icon, name: label, status: "Inicializando motor…",
         percent: 0.95, meta: "", note: "", showCancel,
       });
     } else if (st.phase === "ready") {
       showLibOverlay({
-        icon: "✅", name: label,
-        status: "¡Listo!", percent: 1, meta: "", note: "",
+        icon: "✅", name: label, status: "¡Listo!",
+        percent: 1, meta: "", note: "",
       });
       setTimeout(hideLibOverlay, 350);
     } else if (st.phase === "error") {
@@ -1741,28 +2059,20 @@
           name: "IA de precisión",
           onProgress: (st) => {
             handleProgress(st, {
-              silent,
-              label: "IA de precisión",
-              icon: "🎯",
-              trackPreload: "quadscan",
-              showCancel: true,
+              silent, label: "IA de precisión", icon: "🎯",
+              trackPreload: "quadscan", showCancel: true,
             });
           },
         });
         await promise;
       }
       currentLibURL = null;
-
       const Cls = (window.Quadscan && window.Quadscan.Quadscan) || window.Quadscan;
-      if (typeof Cls !== "function") {
-        throw new Error("Quadscan clase no encontrada");
-      }
-
+      if (typeof Cls !== "function") throw new Error("Quadscan clase no encontrada");
       const instance = new Cls();
       if (!silent) {
         showLibOverlay({
-          icon: "🎯",
-          name: "IA de precisión",
+          icon: "🎯", name: "IA de precisión",
           status: "Inicializando modelo…",
           percent: 0.9,
           meta: "Descargando red neuronal (~4.5 MB)",
@@ -1770,12 +2080,10 @@
         });
       }
       await instance.initialize();
-
       state.quadscanInstance = instance;
       state.quadscanReady = true;
       state.quadscanPromise = null;
       updateAutoDetectBtn();
-
       if (!silent) {
         showLibOverlay({
           icon: "✅", name: "IA de precisión", status: "¡Listo!",
@@ -1808,7 +2116,7 @@
   }
 
   /* =========================================================
-     BOTÓN AUTO-DETECTAR — estado dinámico
+     BOTÓN AUTO-DETECTAR
      ========================================================= */
   function updateAutoDetectBtn() {
     const btn = $("#cropAuto");
@@ -1831,7 +2139,7 @@
   }
 
   /* =========================================================
-     AUTO-DETECCIÓN — Quadscan (guarda 4 puntos, sin bounding box)
+     AUTO-DETECCIÓN
      ========================================================= */
   async function autoDetectEdges() {
     if (!cropImg.complete || !cropImg.naturalWidth) {
@@ -1865,18 +2173,13 @@
       const t0 = performance.now();
       const result = await state.quadscanInstance.scan(cropImg);
       const ms = Math.round(performance.now() - t0);
-
       if (!result || !result.success || !result.corners) {
         showToast("No detectamos bordes. Ajustá a mano.");
         return;
       }
-
       const w = cropImg.naturalWidth;
       const h = cropImg.naturalHeight;
       const { topLeft, topRight, bottomRight, bottomLeft } = result.corners;
-
-      // Guardar los 4 puntos TAL CUAL los devuelve Quadscan, normalizados.
-      // Nada de bounding box: cada esquina es un punto independiente.
       const pad = 0.003;
       state.crop.corners = [
         { x: clamp(topLeft.x / w - pad, 0, 1),     y: clamp(topLeft.y / h - pad, 0, 1) },
@@ -1890,7 +2193,6 @@
       applyCropTransform();
       drawCropOverlay();
       buzz(20);
-
       const conf = typeof result.confidence === "number"
         ? Math.round(result.confidence * 100) : null;
       const msg = conf != null
@@ -1919,14 +2221,13 @@
     return c;
   }
 
-  function buildCroppedCanvas() {
+  async function buildCroppedCanvas() {
     return new Promise((resolve) => {
       const img = new Image();
-      img.onload = () => {
+      img.onload = async () => {
         const full = getWorkCanvas(img);
         const c = state.crop.corners;
 
-        // Fast path: rect casi alineado a los ejes
         if (isNearlyAxisRect(c)) {
           const xs = c.map((p) => p.x), ys = c.map((p) => p.y);
           const x1 = clamp(Math.min(...xs), 0, 1), x2 = clamp(Math.max(...xs), 0, 1);
@@ -1944,12 +2245,11 @@
           return;
         }
 
-        // Warp de perspectiva
         try {
-          const out = warpPerspective(full, c);
+          const out = await warpPerspectiveAsync(full, c);
           resolve(out);
         } catch (e) {
-          console.error("[warp] Falló, usando bounding box como fallback:", e);
+          console.error("[warp] Falló, usando bounding box:", e);
           const xs = c.map((p) => p.x), ys = c.map((p) => p.y);
           const x1 = clamp(Math.min(...xs), 0, 1), x2 = clamp(Math.max(...xs), 0, 1);
           const y1 = clamp(Math.min(...ys), 0, 1), y2 = clamp(Math.max(...ys), 0, 1);
@@ -1978,10 +2278,8 @@
     const ctx = c.getContext("2d");
     ctx.drawImage(srcCanvas, 0, 0);
     if (filterId === "original") return c;
-
     const img = ctx.getImageData(0, 0, c.width, c.height);
     const d = img.data;
-
     if (filterId === "bw") {
       for (let i = 0; i < d.length; i += 4) {
         let v = d[i] * 0.299 + d[i+1] * 0.587 + d[i+2] * 0.114;
@@ -2355,16 +2653,25 @@
     await new Promise((r) => setTimeout(r, 30));
 
     try {
-      const canvas = await buildCroppedCanvas();
+      let canvas = await buildCroppedCanvas();
+
+      if (state.autoStraighten) {
+        btn.innerHTML = `<span class="spinner"></span> Enderezando…`;
+        await new Promise((r) => setTimeout(r, 20));
+        const res = straightenCanvas(canvas);
+        if (Math.abs(res.angle) >= 0.4) {
+          canvas = res.canvas;
+          showToast(`Enderezado ${res.angle > 0 ? "+" : ""}${res.angle.toFixed(1)}°`, 1600);
+        }
+      }
+
       state.preFilterCanvas = canvas;
       state.cropped = canvas.toDataURL("image/jpeg", 0.92);
-
       state.brush.mask = null;
       state.brush.strokes = [];
       state.brush.w = 0;
       state.brush.h = 0;
       ensureMask(canvas.width, canvas.height);
-
       state.currentFilter = "auto";
       setBrushEnabled(false);
       show("filters");
@@ -2378,6 +2685,23 @@
       btn.innerHTML = old;
     }
   }
+
+  /* =========================================================
+     TOGGLE ENDEREZAR
+     ========================================================= */
+  function updateStraightenBtn() {
+    const btn = $("#cropStraighten");
+    if (!btn) return;
+    btn.classList.toggle("toggle-on", state.autoStraighten);
+    btn.textContent = state.autoStraighten ? "📐 Enderezar ✓" : "📐 Enderezar";
+  }
+  $("#cropStraighten").addEventListener("click", () => {
+    state.autoStraighten = !state.autoStraighten;
+    updateStraightenBtn();
+    buzz(8);
+    showToast(state.autoStraighten ? "Enderezado automático activado" : "Enderezado automático desactivado", 1400);
+  });
+  updateStraightenBtn();
 
   /* =========================================================
      COMMIT + PDF + SHARE
@@ -2461,11 +2785,8 @@
       name: "Motor OCR",
       onProgress: (st) => {
         handleProgress(st, {
-          silent,
-          label: "Motor OCR",
-          icon: "📝",
-          trackPreload,
-          showCancel: !silent,
+          silent, label: "Motor OCR", icon: "📝",
+          trackPreload, showCancel: !silent,
         });
       },
     });
@@ -2499,7 +2820,6 @@
     ocrTitle.textContent = "Extrayendo texto…";
     ocrStatus.textContent = "Cargando motor OCR…";
     ocrBarFill.style.width = "0%";
-
     try {
       const Tesseract = await ensureTesseract({ silent: false });
       ocrStatus.textContent = "Cargando idioma (español + inglés)…";
@@ -2526,7 +2846,6 @@
           }
         },
       });
-
       const full = [];
       for (let i = 0; i < dataURLs.length; i++) {
         ocrStatus.textContent = `Página ${i + 1} de ${dataURLs.length}…`;
@@ -2534,7 +2853,6 @@
         full.push(text.trim());
       }
       await worker.terminate();
-
       const out = full.join("\n\n———\n\n");
       ocrRing.style.display = "none";
       ocrTitle.textContent = "Texto extraído";
@@ -3020,6 +3338,7 @@
   (async function boot() {
     await refreshLibraryCount();
     updateAutoDetectBtn();
+    updateStraightenBtn();
 
     const params = new URLSearchParams(location.search);
     const action = params.get("action");
