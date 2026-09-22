@@ -116,17 +116,30 @@
     background:var(--laser);color:var(--ink);font-size:11px;font-weight:800;
     padding:2px 7px;border-radius:999px;min-width:20px;text-align:center
   }
+  .shutter-wrap{position:relative;display:flex;align-items:center;justify-content:center}
   .shutter{
     width:82px;height:82px;border-radius:50%;
     background:linear-gradient(135deg,var(--violet),var(--cyan));
     display:flex;align-items:center;justify-content:center;
     box-shadow:0 0 0 4px rgba(255,255,255,.15),0 12px 40px -8px rgba(108,77,255,.7);
-    transition:transform .12s
+    transition:transform .12s;position:relative;z-index:2
   }
   .shutter:active{transform:scale(.94)}
   .shutter::after{content:"";width:66px;height:66px;border-radius:50%;
     background:var(--paper);transition:transform .12s}
   .shutter:active::after{transform:scale(.92)}
+  .shutter-countdown{
+    position:absolute;inset:-6px;pointer-events:none;z-index:1;opacity:0;
+    transition:opacity .15s
+  }
+  .shutter-countdown.show{opacity:1}
+  .shutter-countdown circle{
+    fill:none;stroke-width:5;stroke-linecap:round;
+    transform:rotate(-90deg);transform-origin:center;
+    transition:stroke-dashoffset .08s linear
+  }
+  .shutter-countdown .track{stroke:rgba(255,255,255,.15)}
+  .shutter-countdown .fill{stroke:var(--laser);filter:drop-shadow(0 0 8px var(--laser))}
   .sweep{
     position:absolute;left:0;right:0;height:3px;
     background:linear-gradient(90deg,transparent,var(--laser),transparent);
@@ -136,7 +149,7 @@
   .sweep.go{animation:sweep .55s ease-out}
   @keyframes sweep{0%{top:0;opacity:1}100%{top:100%;opacity:0}}
 
-  /* Live detection toggle */
+  /* Live detection */
   .live-toggle{
     position:absolute;top:calc(env(safe-area-inset-top) + 62px);right:16px;z-index:6;
     width:44px;height:44px;border-radius:50%;
@@ -147,6 +160,16 @@
   }
   .live-toggle.on{background:var(--laser);color:var(--ink);border-color:var(--laser)}
   .live-toggle.busy{opacity:.55}
+  .autoshutter-toggle{
+    position:absolute;top:calc(env(safe-area-inset-top) + 116px);right:16px;z-index:6;
+    width:44px;height:44px;border-radius:50%;
+    background:rgba(0,0,0,.55);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+    border:1px solid var(--stroke);color:var(--paper);
+    display:flex;align-items:center;justify-content:center;
+    transition:all .15s;font-size:18px
+  }
+  .autoshutter-toggle.on{background:var(--violet);color:#fff;border-color:var(--violet)}
+  .autoshutter-toggle:disabled{opacity:.35}
   .live-overlay{
     position:absolute;inset:0;width:100%;height:100%;
     pointer-events:none;z-index:4;display:none
@@ -156,18 +179,28 @@
     fill:rgba(200,255,46,.08);
     stroke:var(--laser);stroke-width:2;
     vector-effect:non-scaling-stroke;
-    filter:drop-shadow(0 0 8px rgba(200,255,46,.6))
+    filter:drop-shadow(0 0 8px rgba(200,255,46,.6));
+    transition:fill .2s, stroke .2s
+  }
+  .live-overlay.stable polygon{
+    fill:rgba(200,255,46,.18);
+    stroke-width:3
   }
   .live-badge{
-    position:absolute;top:calc(env(safe-area-inset-top) + 118px);left:50%;
+    position:absolute;top:calc(env(safe-area-inset-top) + 172px);left:50%;
     transform:translateX(-50%);
     background:rgba(200,255,46,.12);border:1px solid rgba(200,255,46,.35);
     color:var(--laser);padding:6px 14px;border-radius:999px;
     font-size:12px;font-weight:700;display:none;z-index:5
   }
   .live-badge.show{display:inline-block}
+  .live-badge.stable{
+    background:var(--laser);color:var(--ink);border-color:var(--laser);
+    animation:pulse 0.6s ease-in-out infinite alternate
+  }
+  @keyframes pulse{from{box-shadow:0 0 0 0 rgba(200,255,46,.7)}to{box-shadow:0 0 0 10px rgba(200,255,46,0)}}
 
-  /* ============ CROP (quadrilateral) ============ */
+  /* ============ CROP ============ */
   #crop{background:#000;overflow:hidden}
   .crop-stage{
     position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
@@ -185,9 +218,7 @@
     position:absolute;inset:0;width:100%;height:100%;
     pointer-events:none;overflow:visible
   }
-  .crop-svg .dark-out{
-    fill:rgba(0,0,0,.72);pointer-events:none
-  }
+  .crop-svg .dark-out{fill:rgba(0,0,0,.72);pointer-events:none}
   .crop-svg .poly{
     fill:none;stroke:var(--laser);stroke-width:2.5;
     vector-effect:non-scaling-stroke;
@@ -241,7 +272,6 @@
     padding:6px 14px;border-radius:999px;white-space:nowrap;z-index:4;pointer-events:none
   }
 
-  /* Botones rotación: abajo a la derecha */
   .crop-floating-tools{
     position:absolute;
     right:16px;
@@ -253,7 +283,7 @@
     background:rgba(0,0,0,.55);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
     border:1px solid var(--stroke);
     display:flex;align-items:center;justify-content:center;
-    transition:transform .12s
+    transition:transform .12s;position:relative
   }
   .crop-tool:active{transform:scale(.9)}
   .crop-tool svg{
@@ -261,8 +291,14 @@
     stroke-width:2;stroke-linecap:round;stroke-linejoin:round
   }
   .crop-tool.rotate-flip svg{transform:scaleX(-1)}
+  .crop-tool .zoom-badge{
+    position:absolute;top:-4px;right:-4px;
+    background:var(--laser);color:var(--ink);
+    font-size:10px;font-weight:800;
+    padding:2px 6px;border-radius:999px;min-width:18px;text-align:center
+  }
 
-  /* Lupa durante el drag de esquinas */
+  /* Lupa */
   .crop-magnifier{
     position:absolute;width:130px;height:130px;border-radius:50%;
     border:3px solid var(--laser);
@@ -438,7 +474,7 @@
   }
   .doc-actions .btn{flex:1;min-width:110px;justify-content:center;padding:14px}
 
-  /* ============ MODALES Y ACTION SHEET ============ */
+  /* ============ MODALES ============ */
   .modal-backdrop{
     position:fixed;inset:0;background:rgba(0,0,0,.7);
     backdrop-filter:blur(6px);z-index:900;
@@ -530,7 +566,7 @@
   }
   .ocr-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
 
-  /* ============ HEAVY DOWNLOAD OVERLAY ============ */
+  /* ============ HEAVY DOWNLOAD ============ */
   .lib-overlay{
     position:fixed;inset:0;background:rgba(11,11,18,.94);
     backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
@@ -660,7 +696,7 @@
       <span class="count" id="libCount" style="display:none">0</span>
     </button>
 
-    <div class="hint">by Ohmygoch · v1.6.0</div>
+    <div class="hint">by Ohmygoch · v1.7.0</div>
   </section>
 
   <!-- ============== CAMERA ============== -->
@@ -685,6 +721,7 @@
     </div>
 
     <button class="live-toggle" id="btnLiveDetect" title="Detección en vivo">🎯</button>
+    <button class="autoshutter-toggle" id="btnAutoShutter" title="Captura automática" disabled>📸</button>
     <div class="live-badge" id="liveBadge">Documento detectado ✓</div>
 
     <div class="quality" id="quality">
@@ -700,7 +737,13 @@
           <path d="M21 15l-5-5L5 21"/>
         </svg>
       </button>
-      <button class="shutter" id="btnShutter" aria-label="Capturar"></button>
+      <div class="shutter-wrap">
+        <svg class="shutter-countdown" id="shutterCountdown" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
+          <circle class="track" cx="50" cy="50" r="46"/>
+          <circle class="fill" id="shutterCountdownFill" cx="50" cy="50" r="46"/>
+        </svg>
+        <button class="shutter" id="btnShutter" aria-label="Capturar"></button>
+      </div>
       <button class="icon-btn" id="btnSwitch" title="Cambiar cámara">
         <svg viewBox="0 0 24 24">
           <path d="M17 1l4 4-4 4"/>
@@ -722,17 +765,24 @@
       <button class="chip" id="cropReset">Reset</button>
     </div>
     <div class="crop-floating-tools">
-      <button class="crop-tool rotate-flip" id="cropRotateL" aria-label="Rotar a la izquierda">
+      <button class="crop-tool rotate-flip" id="cropRotateL" aria-label="Rotar izquierda">
         <svg viewBox="0 0 24 24">
           <polyline points="1 4 1 10 7 10"/>
           <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
         </svg>
       </button>
-      <button class="crop-tool" id="cropRotateR" aria-label="Rotar a la derecha">
+      <button class="crop-tool" id="cropRotateR" aria-label="Rotar derecha">
         <svg viewBox="0 0 24 24">
           <polyline points="23 4 23 10 17 10"/>
           <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
         </svg>
+      </button>
+      <button class="crop-tool" id="cropZoomLens" aria-label="Zoom de lupa">
+        <svg viewBox="0 0 24 24">
+          <circle cx="11" cy="11" r="8"/>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <span class="zoom-badge" id="zoomBadge">3×</span>
       </button>
     </div>
     <div class="crop-stage" id="cropStage">
@@ -812,9 +862,7 @@
     <div class="done-title">¡Listo!</div>
     <div class="done-sub" id="doneSub">0 páginas listas</div>
     <div class="done-actions">
-      <button class="btn primary" id="btnShare">
-        📤 Compartir PDF
-      </button>
+      <button class="btn primary" id="btnShare">📤 Compartir PDF</button>
       <div class="done-row">
         <button class="btn ghost" id="btnPdf">⬇ Descargar</button>
         <button class="btn ghost" id="btnOcr">📝 OCR</button>
@@ -983,6 +1031,42 @@
   function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
 
   /* =========================================================
+     PERSISTENCIA (localStorage)
+     ========================================================= */
+  const STORAGE_KEY = "omgscan.prefs.v1";
+  const prefs = {
+    autoStraighten: true,
+    liveDetect: false,
+    liveAutoShutter: false,
+    magnifierZoom: 3,
+    lastFilter: "auto",
+    _load() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const data = JSON.parse(raw);
+        if (typeof data.autoStraighten === "boolean") this.autoStraighten = data.autoStraighten;
+        if (typeof data.liveDetect === "boolean") this.liveDetect = data.liveDetect;
+        if (typeof data.liveAutoShutter === "boolean") this.liveAutoShutter = data.liveAutoShutter;
+        if (typeof data.magnifierZoom === "number") this.magnifierZoom = clamp(data.magnifierZoom, 2, 6);
+        if (typeof data.lastFilter === "string") this.lastFilter = data.lastFilter;
+      } catch (_) {}
+    },
+    save() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+          autoStraighten: this.autoStraighten,
+          liveDetect: this.liveDetect,
+          liveAutoShutter: this.liveAutoShutter,
+          magnifierZoom: this.magnifierZoom,
+          lastFilter: this.lastFilter,
+        }));
+      } catch (_) {}
+    },
+  };
+  prefs._load();
+
+  /* =========================================================
      HOMOGRAFÍA + WARP
      ========================================================= */
   function solveLinearSystem(A, b) {
@@ -1008,7 +1092,6 @@
     }
     return x;
   }
-
   function computeHomography(dstPoints, srcPoints) {
     const A = [], b = [];
     for (let i = 0; i < 4; i++) {
@@ -1020,58 +1103,6 @@
     const h = solveLinearSystem(A, b);
     return [...h, 1];
   }
-
-  function warpPerspective(srcCanvas, corners) {
-    const sw = srcCanvas.width, sh = srcCanvas.height;
-    const srcPts = corners.map((c) => ({ x: c.x * sw, y: c.y * sh }));
-    const wTop = Math.hypot(srcPts[1].x - srcPts[0].x, srcPts[1].y - srcPts[0].y);
-    const wBot = Math.hypot(srcPts[2].x - srcPts[3].x, srcPts[2].y - srcPts[3].y);
-    const hL = Math.hypot(srcPts[3].x - srcPts[0].x, srcPts[3].y - srcPts[0].y);
-    const hR = Math.hypot(srcPts[2].x - srcPts[1].x, srcPts[2].y - srcPts[1].y);
-    const dstW = Math.max(1, Math.round(Math.max(wTop, wBot)));
-    const dstH = Math.max(1, Math.round(Math.max(hL, hR)));
-    const dstPts = [{ x: 0, y: 0 }, { x: dstW, y: 0 }, { x: dstW, y: dstH }, { x: 0, y: dstH }];
-    const H = computeHomography(dstPts, srcPts);
-    const srcCtx = srcCanvas.getContext("2d", { willReadFrequently: true });
-    const srcData = srcCtx.getImageData(0, 0, sw, sh);
-    const srcPix = srcData.data;
-    const dst = document.createElement("canvas");
-    dst.width = dstW; dst.height = dstH;
-    const dstCtx = dst.getContext("2d");
-    const dstData = dstCtx.createImageData(dstW, dstH);
-    const dstPix = dstData.data;
-    const h0=H[0],h1=H[1],h2=H[2],h3=H[3],h4=H[4],h5=H[5],h6=H[6],h7=H[7],h8=H[8];
-    let di = 0;
-    for (let y = 0; y < dstH; y++) {
-      const yh6 = y * h6, yh7 = y * h7;
-      for (let x = 0; x < dstW; x++) {
-        const denom = x * h6 + yh7 + h8;
-        const sxn = (h0*x + h1*y + h2) / denom;
-        const syn = (h3*x + h4*y + h5) / denom;
-        const x0 = sxn | 0, y0 = syn | 0;
-        const x1 = x0 + 1, y1 = y0 + 1;
-        const fx = sxn - x0, fy = syn - y0;
-        const ifx = 1 - fx, ify = 1 - fy;
-        if (x0 < 0 || y0 < 0 || x1 >= sw || y1 >= sh) {
-          dstPix[di] = 0; dstPix[di+1] = 0; dstPix[di+2] = 0; dstPix[di+3] = 255;
-          di += 4; continue;
-        }
-        const i00 = (y0*sw + x0) * 4;
-        const i10 = (y0*sw + x1) * 4;
-        const i01 = (y1*sw + x0) * 4;
-        const i11 = (y1*sw + x1) * 4;
-        const w00 = ifx*ify, w10 = fx*ify, w01 = ifx*fy, w11 = fx*fy;
-        dstPix[di]   = srcPix[i00]   * w00 + srcPix[i10]   * w10 + srcPix[i01]   * w01 + srcPix[i11]   * w11;
-        dstPix[di+1] = srcPix[i00+1] * w00 + srcPix[i10+1] * w10 + srcPix[i01+1] * w01 + srcPix[i11+1] * w11;
-        dstPix[di+2] = srcPix[i00+2] * w00 + srcPix[i10+2] * w10 + srcPix[i01+2] * w01 + srcPix[i11+2] * w11;
-        dstPix[di+3] = 255;
-        di += 4;
-      }
-    }
-    dstCtx.putImageData(dstData, 0, 0);
-    return dst;
-  }
-
   function isNearlyAxisRect(corners, tol = 0.008) {
     return Math.abs(corners[0].y - corners[1].y) < tol
         && Math.abs(corners[2].y - corners[3].y) < tol
@@ -1126,7 +1157,7 @@
       const blob = new Blob([code], { type: "application/javascript" });
       worker = new Worker(URL.createObjectURL(blob));
     } catch (e) {
-      console.warn("[warp-worker] No se pudo crear el worker:", e.message);
+      console.warn("[warp-worker]", e.message);
     }
     let seq = 0;
     const pending = new Map();
@@ -1168,14 +1199,13 @@
     const H = computeHomography(dstPts, srcPts);
 
     if (!warpWorker.available) {
-      return warpPerspective(srcCanvas, corners);
+      throw new Error("Worker no disponible");
     }
 
     const srcCtx = srcCanvas.getContext("2d", { willReadFrequently: true });
     const srcData = srcCtx.getImageData(0, 0, sw, sh);
     const copy = new ImageData(new Uint8ClampedArray(srcData.data), sw, sh);
     const dstData = await warpWorker.warp(copy, sw, sh, dstW, dstH, H);
-
     const out = document.createElement("canvas");
     out.width = dstW; out.height = dstH;
     out.getContext("2d").putImageData(dstData, 0, 0);
@@ -1230,7 +1260,6 @@
     }
     return bestAngle;
   }
-
   function straightenCanvas(canvas) {
     const angle = detectSkewAngle(canvas);
     if (Math.abs(angle) < 0.4) return { canvas, angle: 0 };
@@ -1363,7 +1392,7 @@
       zoom: 1, panX: 0, panY: 0,
     },
     cropped: null,
-    currentFilter: "auto",
+    currentFilter: prefs.lastFilter || "auto",
     pages: [],
     qualityTimer: null,
     brush: {
@@ -1374,14 +1403,28 @@
     renderedCanvas: null,
     currentDocId: null,
     isPainting: false,
+    // Quadscan
     quadscanInstance: null,
     quadscanPromise: null,
     quadscanReady: false,
     quadscanFailed: false,
-    autoStraighten: true,
+    // Auto-enderezar
+    autoStraighten: prefs.autoStraighten,
+    // Live detect
     liveDetect: false,
     liveTimer: null,
     liveBusy: false,
+    liveIntervalMs: 500,
+    liveSuccessStreak: 0,
+    liveFailStreak: 0,
+    liveCornersHistory: [],
+    // Auto-shutter
+    autoShutter: prefs.liveAutoShutter,
+    autoShutterEnabled: false,
+    autoShutterTimer: null,
+    autoShutterCountdown: null,
+    // Magnifier
+    magnifierZoom: prefs.magnifierZoom,
   };
 
   const FILTERS = [
@@ -1500,6 +1543,9 @@
   const livePoly = $("#livePoly");
   const liveBadge = $("#liveBadge");
   const btnLiveDetect = $("#btnLiveDetect");
+  const btnAutoShutter = $("#btnAutoShutter");
+  const shutterCountdown = $("#shutterCountdown");
+  const shutterCountdownFill = $("#shutterCountdownFill");
 
   async function startCamera() {
     stopCamera();
@@ -1518,6 +1564,14 @@
       state.torchOn = false;
       updateFlashBtn();
       startQualityLoop();
+      updateAutoShutterBtn();
+      // Reanudar live detect si el usuario lo tenía activo
+      if (prefs.liveDetect && state.quadscanReady) {
+        state.liveDetect = true;
+        btnLiveDetect.classList.add("on");
+        liveOverlay.classList.add("show");
+        startLiveDetection();
+      }
     } catch (err) {
       console.error(err);
       showToast("No pudimos abrir la cámara. Usá Galería.");
@@ -1533,6 +1587,7 @@
       liveBadge.classList.remove("show");
       btnLiveDetect.classList.remove("on");
     }
+    cancelAutoShutter();
     if (state.stream) {
       state.stream.getTracks().forEach((t) => t.stop());
       state.stream = null;
@@ -1585,6 +1640,7 @@
   }
   async function capture() {
     if (!state.stream || video.readyState < 2) return;
+    cancelAutoShutter();
     buzz(12);
     const sweep = $("#sweep");
     sweep.classList.remove("go"); void sweep.offsetWidth;
@@ -1600,7 +1656,7 @@
   }
 
   /* =========================================================
-     LIVE DETECTION
+     LIVE DETECTION (adaptativa 2fps)
      ========================================================= */
   const liveCanvas = document.createElement("canvas");
   liveCanvas.width = 320;
@@ -1613,7 +1669,10 @@
       return;
     }
     state.liveDetect = !state.liveDetect;
+    prefs.liveDetect = state.liveDetect;
+    prefs.save();
     btnLiveDetect.classList.toggle("on", state.liveDetect);
+    updateAutoShutterBtn();
     if (state.liveDetect) {
       liveOverlay.classList.add("show");
       startLiveDetection();
@@ -1621,7 +1680,9 @@
     } else {
       liveOverlay.classList.remove("show");
       liveBadge.classList.remove("show");
+      liveOverlay.classList.remove("stable");
       stopLiveDetection();
+      cancelAutoShutter();
       showToast("Detección en vivo desactivada");
     }
     buzz(10);
@@ -1629,12 +1690,40 @@
 
   function startLiveDetection() {
     stopLiveDetection();
-    state.liveTimer = setInterval(runLiveDetectionOnce, 1000);
-    runLiveDetectionOnce();
+    state.liveIntervalMs = 500;
+    state.liveSuccessStreak = 0;
+    state.liveFailStreak = 0;
+    state.liveCornersHistory = [];
+    scheduleNextLive();
+  }
+  function scheduleNextLive() {
+    if (!state.liveDetect) return;
+    state.liveTimer = setTimeout(async () => {
+      await runLiveDetectionOnce();
+      scheduleNextLive();
+    }, state.liveIntervalMs);
   }
   function stopLiveDetection() {
-    if (state.liveTimer) { clearInterval(state.liveTimer); state.liveTimer = null; }
+    if (state.liveTimer) { clearTimeout(state.liveTimer); state.liveTimer = null; }
     state.liveBusy = false;
+  }
+
+  function cornersDelta(c1, c2) {
+    if (!c1 || !c2) return Infinity;
+    let sum = 0;
+    for (let i = 0; i < 4; i++) {
+      sum += Math.hypot(c1[i].x - c2[i].x, c1[i].y - c2[i].y);
+    }
+    return sum / 4;
+  }
+
+  function areCornersStable(history) {
+    if (history.length < 3) return false;
+    // Comparar últimos 3 frames entre sí
+    const t1 = cornersDelta(history[history.length - 1], history[history.length - 2]);
+    const t2 = cornersDelta(history[history.length - 2], history[history.length - 3]);
+    const maxDelta = 0.012; // 1.2% de la imagen
+    return t1 < maxDelta && t2 < maxDelta;
   }
 
   async function runLiveDetectionOnce() {
@@ -1643,6 +1732,8 @@
     if (!state.quadscanReady || !state.quadscanInstance) return;
     state.liveBusy = true;
     btnLiveDetect.classList.add("busy");
+
+    const t0 = performance.now();
     try {
       const vw = video.videoWidth, vh = video.videoHeight;
       const targetW = 320;
@@ -1653,26 +1744,69 @@
       }
       liveCtx.drawImage(video, 0, 0, targetW, targetH);
       const result = await state.quadscanInstance.scan(liveCanvas);
+
       if (result && result.success && result.corners) {
         const { topLeft, topRight, bottomRight, bottomLeft } = result.corners;
-        const nx = (p) => (p.x / liveCanvas.width) * 100;
-        const ny = (p) => (p.y / liveCanvas.height) * 100;
+        const n = [
+          { x: topLeft.x / liveCanvas.width, y: topLeft.y / liveCanvas.height },
+          { x: topRight.x / liveCanvas.width, y: topRight.y / liveCanvas.height },
+          { x: bottomRight.x / liveCanvas.width, y: bottomRight.y / liveCanvas.height },
+          { x: bottomLeft.x / liveCanvas.width, y: bottomLeft.y / liveCanvas.height },
+        ];
+        state.liveCornersHistory.push(n);
+        if (state.liveCornersHistory.length > 5) state.liveCornersHistory.shift();
+        state.liveSuccessStreak++;
+        state.liveFailStreak = 0;
+
+        const nx = (p) => (p.x * 100);
+        const ny = (p) => (p.y * 100);
         livePoly.setAttribute("points", [
-          `${nx(topLeft)},${ny(topLeft)}`,
-          `${nx(topRight)},${ny(topRight)}`,
-          `${nx(bottomRight)},${ny(bottomRight)}`,
-          `${nx(bottomLeft)},${ny(bottomLeft)}`,
+          `${nx(n[0])},${ny(n[0])}`,
+          `${nx(n[1])},${ny(n[1])}`,
+          `${nx(n[2])},${ny(n[2])}`,
+          `${nx(n[3])},${ny(n[3])}`,
         ].join(" "));
+
         const conf = typeof result.confidence === "number" ? result.confidence : 0;
-        if (conf >= 0.7) {
+        const stable = areCornersStable(state.liveCornersHistory);
+        const confident = conf >= 0.7;
+
+        if (confident && stable) {
+          liveBadge.classList.add("show", "stable");
+          liveBadge.textContent = "✓ Encuadrado · ¡capturando!";
+          liveOverlay.classList.add("stable");
+          if (state.autoShutter && state.autoShutterEnabled && !state.autoShutterCountdown) {
+            startAutoShutterCountdown();
+          }
+        } else if (confident) {
           liveBadge.classList.add("show");
+          liveBadge.classList.remove("stable");
           liveBadge.textContent = `Documento detectado ✓ ${Math.round(conf * 100)}%`;
+          liveOverlay.classList.remove("stable");
+          cancelAutoShutter();
         } else {
-          liveBadge.classList.remove("show");
+          liveBadge.classList.remove("show", "stable");
+          liveOverlay.classList.remove("stable");
+          cancelAutoShutter();
         }
       } else {
+        state.liveSuccessStreak = 0;
+        state.liveFailStreak++;
+        state.liveCornersHistory = [];
         livePoly.setAttribute("points", "");
-        liveBadge.classList.remove("show");
+        liveBadge.classList.remove("show", "stable");
+        liveOverlay.classList.remove("stable");
+        cancelAutoShutter();
+      }
+
+      // Adaptar intervalo según tiempo de ejecución y streak
+      const elapsed = performance.now() - t0;
+      if (elapsed > 380 || state.liveFailStreak >= 3) {
+        state.liveIntervalMs = 900;
+      } else if (elapsed < 200 && state.liveSuccessStreak >= 3) {
+        state.liveIntervalMs = 450;
+      } else {
+        state.liveIntervalMs = 600;
       }
     } catch (_) {
       // silencioso
@@ -1683,11 +1817,81 @@
   }
 
   /* =========================================================
+     AUTO-SHUTTER (countdown 600ms)
+     ========================================================= */
+  const AUTOSHUTTER_DURATION = 600;
+  const COUNTDOWN_CIRCUMFERENCE = 2 * Math.PI * 46;
+  shutterCountdownFill.style.strokeDasharray = COUNTDOWN_CIRCUMFERENCE;
+
+  function updateAutoShutterBtn() {
+    if (!btnAutoShutter) return;
+    btnAutoShutter.disabled = !state.liveDetect;
+    btnAutoShutter.classList.toggle("on", state.autoShutter && state.liveDetect);
+    if (state.autoShutter && state.liveDetect) {
+      btnAutoShutter.textContent = "📸";
+    } else if (state.autoShutter && !state.liveDetect) {
+      btnAutoShutter.textContent = "📸";
+    } else {
+      btnAutoShutter.textContent = "📸";
+    }
+  }
+
+  btnAutoShutter.addEventListener("click", () => {
+    state.autoShutter = !state.autoShutter;
+    state.autoShutterEnabled = state.autoShutter;
+    prefs.liveAutoShutter = state.autoShutter;
+    prefs.save();
+    updateAutoShutterBtn();
+    buzz(8);
+    if (state.autoShutter) {
+      showToast("Auto-shutter activado 📸");
+    } else {
+      cancelAutoShutter();
+      showToast("Auto-shutter desactivado");
+    }
+  });
+
+  function startAutoShutterCountdown() {
+    if (state.autoShutterCountdown) return;
+    state.autoShutterCountdown = { start: performance.now(), cancelled: false };
+    shutterCountdown.classList.add("show");
+    const step = () => {
+      if (!state.autoShutterCountdown || state.autoShutterCountdown.cancelled) return;
+      const elapsed = performance.now() - state.autoShutterCountdown.start;
+      const pct = Math.min(1, elapsed / AUTOSHUTTER_DURATION);
+      shutterCountdownFill.style.strokeDashoffset = -(COUNTDOWN_CIRCUMFERENCE * pct);
+      if (pct >= 1) {
+        triggerAutoShutter();
+        return;
+      }
+      requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+    buzz(6);
+  }
+
+  function cancelAutoShutter() {
+    if (state.autoShutterCountdown) {
+      state.autoShutterCountdown.cancelled = true;
+      state.autoShutterCountdown = null;
+    }
+    shutterCountdown.classList.remove("show");
+    shutterCountdownFill.style.strokeDashoffset = 0;
+  }
+
+  function triggerAutoShutter() {
+    state.autoShutterCountdown = null;
+    shutterCountdown.classList.remove("show");
+    shutterCountdownFill.style.strokeDashoffset = 0;
+    buzz([15, 30, 15]);
+    capture();
+  }
+
+  /* =========================================================
      CROP
      ========================================================= */
   const cropImg = $("#cropImg");
   const cropWrap = $("#cropWrap");
-  const cropSvg = $("#cropSvg");
   const cropPoly = $("#cropPoly");
   const cropDark = $("#cropDark");
   const cropStage = $("#cropStage");
@@ -1695,7 +1899,6 @@
   const cropMagnifier = $("#cropMagnifier");
   const cropMagCanvas = cropMagnifier.querySelector("canvas");
   const MAG_SIZE = 130;
-  const MAG_ZOOM = 3;
   cropMagCanvas.width = MAG_SIZE;
   cropMagCanvas.height = MAG_SIZE;
 
@@ -1721,7 +1924,6 @@
   function cornersToPointsAttr(corners) {
     return corners.map((c) => `${c.x},${c.y}`).join(" ");
   }
-
   function drawCropOverlay() {
     const c = state.crop.corners;
     cropPoly.setAttribute("points", cornersToPointsAttr(c));
@@ -1734,7 +1936,6 @@
       h.style.top  = (p.y * 100) + "%";
     });
   }
-
   function applyCropTransform() {
     const { zoom, panX, panY } = state.crop;
     cropWrap.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
@@ -1742,7 +1943,6 @@
       ? `Zoom ${zoom.toFixed(1)}× · arrastrá para mover`
       : "Pellizcá para zoom · arrastrá las esquinas";
   }
-
   function rotateImageDataURL(dataURL, degrees) {
     return new Promise((resolve) => {
       const img = new Image();
@@ -1765,7 +1965,6 @@
       img.src = dataURL;
     });
   }
-
   async function rotateCrop(degrees) {
     if (!state.rawCapture) return;
     cropImg.style.opacity = "0.35";
@@ -1806,10 +2005,7 @@
     buzz(12);
   }
 
-  /* --------- Gestos: pinch, pan, drag de handles + lupa --------- */
-  const activePointers = new Map();
-  let gesture = null;
-
+  /* ------- Lupa ------- */
   function updateMagnifier(clientX, clientY) {
     const stageRect = cropStage.getBoundingClientRect();
     let mx = clientX - stageRect.left;
@@ -1826,7 +2022,7 @@
     const ny = (clientY - rect.top) / rect.height;
     const px = nx * cropImg.naturalWidth;
     const py = ny * cropImg.naturalHeight;
-    const srcSize = MAG_SIZE / MAG_ZOOM;
+    const srcSize = MAG_SIZE / state.magnifierZoom;
     try {
       ctx.drawImage(
         cropImg,
@@ -1850,6 +2046,28 @@
   function hideMagnifier() {
     cropMagnifier.classList.remove("show");
   }
+
+  // Zoom de lupa ciclable
+  const zoomLevels = [2, 3, 4, 6];
+  function updateZoomBadge() {
+    const badge = $("#zoomBadge");
+    if (badge) badge.textContent = state.magnifierZoom + "×";
+  }
+  $("#cropZoomLens").addEventListener("click", () => {
+    const idx = zoomLevels.indexOf(state.magnifierZoom);
+    const next = zoomLevels[(idx + 1) % zoomLevels.length];
+    state.magnifierZoom = next;
+    prefs.magnifierZoom = next;
+    prefs.save();
+    updateZoomBadge();
+    buzz(6);
+    showToast(`Lupa ${next}×`, 1200);
+  });
+  updateZoomBadge();
+
+  /* --------- Gestos --------- */
+  const activePointers = new Map();
+  let gesture = null;
 
   cropStage.addEventListener("pointerdown", (e) => {
     activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -1877,11 +2095,9 @@
     }
     cropStage.setPointerCapture(e.pointerId);
   });
-
   cropStage.addEventListener("pointermove", (e) => {
     if (!activePointers.has(e.pointerId)) return;
     activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-
     if (gesture?.mode === "pinch" && activePointers.size >= 2) {
       const [a, b] = [...activePointers.values()];
       state.crop.zoom = clamp(gesture.initialZoom * (dist(a, b) / gesture.initialDist), 1, 5);
@@ -1903,7 +2119,6 @@
       updateMagnifier(e.clientX, e.clientY);
     }
   });
-
   const endPointer = (e) => {
     activePointers.delete(e.pointerId);
     if (activePointers.size === 0) {
@@ -2051,7 +2266,6 @@
     if (state.quadscanReady && state.quadscanInstance) return state.quadscanInstance;
     if (state.quadscanPromise) return state.quadscanPromise;
     if (state.quadscanFailed) throw new Error("Quadscan no disponible");
-
     state.quadscanPromise = (async () => {
       if (!window.Quadscan) {
         currentLibURL = QUADSCAN_URL;
@@ -2084,6 +2298,7 @@
       state.quadscanReady = true;
       state.quadscanPromise = null;
       updateAutoDetectBtn();
+      updateAutoShutterBtn();
       if (!silent) {
         showLibOverlay({
           icon: "✅", name: "IA de precisión", status: "¡Listo!",
@@ -2097,10 +2312,10 @@
       state.quadscanFailed = true;
       state.quadscanPromise = null;
       updateAutoDetectBtn();
+      updateAutoShutterBtn();
       if (!silent) hideLibOverlay();
       throw e;
     });
-
     return state.quadscanPromise;
   }
 
@@ -2113,6 +2328,7 @@
     }
     updatePreloadChip();
     updateAutoDetectBtn();
+    updateAutoShutterBtn();
   }
 
   /* =========================================================
@@ -2220,14 +2436,12 @@
     c.getContext("2d").drawImage(imgEl, 0, 0, w, h);
     return c;
   }
-
   async function buildCroppedCanvas() {
     return new Promise((resolve) => {
       const img = new Image();
       img.onload = async () => {
         const full = getWorkCanvas(img);
         const c = state.crop.corners;
-
         if (isNearlyAxisRect(c)) {
           const xs = c.map((p) => p.x), ys = c.map((p) => p.y);
           const x1 = clamp(Math.min(...xs), 0, 1), x2 = clamp(Math.max(...xs), 0, 1);
@@ -2244,7 +2458,6 @@
           resolve(out);
           return;
         }
-
         try {
           const out = await warpPerspectiveAsync(full, c);
           resolve(out);
@@ -2317,7 +2530,7 @@
   }
 
   /* =========================================================
-     PINCEL DE SOMBRA
+     PINCEL
      ========================================================= */
   function ensureMask(w, h) {
     const b = state.brush;
@@ -2328,10 +2541,7 @@
     }
     return b.mask;
   }
-  function resetMask() {
-    const b = state.brush;
-    if (b.mask) b.mask.fill(0);
-  }
+  function resetMask() { if (state.brush.mask) state.brush.mask.fill(0); }
   function paintDot(cx, cy, radius, strengthPct, erase) {
     const b = state.brush;
     const w = b.w, h = b.h, mask = b.mask;
@@ -2441,9 +2651,6 @@
     filtersImg.src = out.toDataURL("image/jpeg", 0.9);
   }
 
-  /* =========================================================
-     FILTERS UI
-     ========================================================= */
   function buildFilterRail() {
     const rail = $("#filterRail");
     rail.innerHTML = "";
@@ -2454,6 +2661,8 @@
       btn.innerHTML = `<div class="swatch"></div><span>${f.label}</span>`;
       btn.addEventListener("click", () => {
         state.currentFilter = f.id;
+        prefs.lastFilter = f.id;
+        prefs.save();
         rail.querySelectorAll(".filter-pill").forEach((p) =>
           p.classList.toggle("on", p.dataset.id === f.id));
         renderPreviewOnly(f.id);
@@ -2645,16 +2854,13 @@
       showToast("El área seleccionada es muy chica");
       return;
     }
-
     const btn = $("#cropNext");
     const old = btn.innerHTML;
     btn.disabled = true;
     btn.innerHTML = `<span class="spinner"></span> Procesando…`;
     await new Promise((r) => setTimeout(r, 30));
-
     try {
       let canvas = await buildCroppedCanvas();
-
       if (state.autoStraighten) {
         btn.innerHTML = `<span class="spinner"></span> Enderezando…`;
         await new Promise((r) => setTimeout(r, 20));
@@ -2664,7 +2870,6 @@
           showToast(`Enderezado ${res.angle > 0 ? "+" : ""}${res.angle.toFixed(1)}°`, 1600);
         }
       }
-
       state.preFilterCanvas = canvas;
       state.cropped = canvas.toDataURL("image/jpeg", 0.92);
       state.brush.mask = null;
@@ -2672,8 +2877,6 @@
       state.brush.w = 0;
       state.brush.h = 0;
       ensureMask(canvas.width, canvas.height);
-      state.currentFilter = "auto";
-      setBrushEnabled(false);
       show("filters");
       buildFilterRail();
       renderFinal();
@@ -2687,7 +2890,7 @@
   }
 
   /* =========================================================
-     TOGGLE ENDEREZAR
+     TOGGLE ENDEREZAR (con persistencia)
      ========================================================= */
   function updateStraightenBtn() {
     const btn = $("#cropStraighten");
@@ -2697,11 +2900,12 @@
   }
   $("#cropStraighten").addEventListener("click", () => {
     state.autoStraighten = !state.autoStraighten;
+    prefs.autoStraighten = state.autoStraighten;
+    prefs.save();
     updateStraightenBtn();
     buzz(8);
     showToast(state.autoStraighten ? "Enderezado automático activado" : "Enderezado automático desactivado", 1400);
   });
-  updateStraightenBtn();
 
   /* =========================================================
      COMMIT + PDF + SHARE
@@ -2799,7 +3003,6 @@
     });
     return tesseractPromise;
   }
-
   async function preloadTesseract() {
     try {
       await ensureTesseract({ silent: true, trackPreload: "tesseract" });
@@ -2810,7 +3013,6 @@
     }
     updatePreloadChip();
   }
-
   async function runOCR(dataURLs, docName = "") {
     ocrOverlay.classList.add("show");
     ocrRing.style.display = "";
@@ -2870,7 +3072,6 @@
       setTimeout(() => ocrOverlay.classList.remove("show"), 2400);
     }
   }
-
   $("#ocrClose").addEventListener("click", () => ocrOverlay.classList.remove("show"));
   $("#ocrCopy").addEventListener("click", async () => {
     try {
@@ -3147,7 +3348,6 @@
     show("camera"); await startCamera();
   });
   $("#btnLibrary").addEventListener("click", openLibrary);
-
   $("#btnClose").addEventListener("click", () => { stopCamera(); show("home"); });
   $("#btnFlash").addEventListener("click", toggleFlash);
   $("#btnShutter").addEventListener("click", capture);
@@ -3180,14 +3380,12 @@
       { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 },
     ];
     state.crop.zoom = 1; state.crop.panX = 0; state.crop.panY = 0;
-    applyCropTransform();
-    drawCropOverlay();
+    applyCropTransform(); drawCropOverlay();
   });
   $("#cropReset").addEventListener("click", () => {
     state.crop.corners = DEFAULT_CORNERS();
     state.crop.zoom = 1; state.crop.panX = 0; state.crop.panY = 0;
-    applyCropTransform();
-    drawCropOverlay();
+    applyCropTransform(); drawCropOverlay();
   });
   $("#cropRotateL").addEventListener("click", () => rotateCrop(-90));
   $("#cropRotateR").addEventListener("click", () => rotateCrop(90));
@@ -3263,7 +3461,6 @@
   });
 
   $("#libBack").addEventListener("click", () => show("home"));
-
   $("#docBack").addEventListener("click", () => {
     state.currentDocId = null;
     show("library"); renderLibrary();
@@ -3304,14 +3501,10 @@
      CICLO DE VIDA
      ========================================================= */
   window.addEventListener("resize", () => {
-    if (views.crop.classList.contains("active")) {
-      drawCropOverlay();
-    }
+    if (views.crop.classList.contains("active")) drawCropOverlay();
   });
   window.addEventListener("orientationchange", () => setTimeout(() => {
-    if (views.crop.classList.contains("active")) {
-      drawCropOverlay();
-    }
+    if (views.crop.classList.contains("active")) drawCropOverlay();
   }, 250));
   document.addEventListener("visibilitychange", () => {
     if (document.hidden && state.stream) {
@@ -3339,6 +3532,8 @@
     await refreshLibraryCount();
     updateAutoDetectBtn();
     updateStraightenBtn();
+    updateAutoShutterBtn();
+    updateZoomBadge();
 
     const params = new URLSearchParams(location.search);
     const action = params.get("action");
