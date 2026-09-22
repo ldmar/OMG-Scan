@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Test Scanic · OMG Scan</title>
+<style>
+  :root{ --ink:#0B0B12; --paper:#F7F5F0; --violet:#6C4DFF; --laser:#C8FF2E;
+         --cyan:#23D3EE; --muted:#8A8A97; --card:#15151F; --stroke:rgba(255,255,255,.08); }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;min-height:100%;background:var(--ink);color:var(--paper);
+    font-family:-apple-system,BlinkMacSystemFont,'Inter',system-ui,sans-serif}
+  .wrap{max-width:720px;margin:0 auto;padding:20px;display:flex;flex-direction:column;gap:16px}
+  h1{font-size:22px;letter-spacing:-.5px;margin:0}
+  h1 span{color:var(--violet)}
+  .sub{color:var(--muted);font-size:13px;margin:0}
+  .row{display:flex;gap:10px;flex-wrap:wrap}
+  button, label.btn{
+    padding:14px 20px;border-radius:14px;font-weight:700;font-size:15px;border:0;
+    cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:transform .12s;
+    background:var(--card);color:var(--paper);border:1px solid var(--stroke)
+  }
+  button:active, label.btn:active{transform:scale(.96)}
+  button.primary, label.primary{
+    background:linear-gradient(135deg,var(--violet),var(--cyan));color:#fff;border-color:transparent;
+    box-shadow:0 12px 32px -10px rgba(108,77,255,.7)
+  }
+  button:disabled{opacity:.4;pointer-events:none}
+  input[type=file]{display:none}
+  .canvas-box{
+    background:var(--card);border:1px solid var(--stroke);border-radius:16px;
+    padding:12px;display:flex;align-items:center;justify-content:center;min-height:200px;
+    overflow:hidden
+  }
+  .canvas-box canvas, .canvas-box img{max-width:100%;max-height:60vh;border-radius:8px;display:block}
+  .placeholder{color:var(--muted);font-size:14px;text-align:center;padding:40px 20px}
+  .log{
+    background:#0e0e16;border:1px solid var(--stroke);border-radius:12px;
+    padding:14px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    font-size:12px;line-height:1.6;color:var(--muted);
+    max-height:240px;overflow-y:auto;white-space:pre-wrap;word-break:break-word;
+    -webkit-user-select:text;user-select:text
+  }
+  .log .ok{color:var(--laser)}
+  .log .err{color:#ff7a7e}
+  .log .info{color:var(--cyan)}
+  .badge{
+    display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;
+    font-size:11px;font-weight:700;background:rgba(200,255,46,.12);color:var(--laser);
+    border:1px solid rgba(200,255,46,.35)
+  }
+  .stats{display:flex;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+  .stats b{color:var(--paper)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div>
+    <h1>Test <span>Scanic</span></h1>
+    <p class="sub">Detección de bordes + corrección de perspectiva · Rust/WASM · ~100 KB</p>
+  </div>
+
+  <div class="badge" id="libStatus">⏳ Cargando librería…</div>
+
+  <div class="row">
+    <label class="btn primary">
+      📷 Elegir foto
+      <input type="file" id="fileInput" accept="image/*" />
+    </label>
+    <button id="btnDetect" disabled>🔍 Detectar esquinas</button>
+    <button id="btnExtract" disabled>✂️ Extraer doc</button>
+  </div>
+
+  <div class="canvas-box" id="canvasBox">
+    <div class="placeholder" id="placeholder">Elegí una foto para empezar</div>
+  </div>
+
+  <div class="stats" id="stats" style="display:none">
+    <div>Estado: <b id="statStatus">—</b></div>
+    <div>Confianza: <b id="statConfidence">—</b></div>
+    <div>Tiempo: <b id="statTime">—</b></div>
+  </div>
+
+  <div class="log" id="log">Esperando acción…</div>
+</div>
+
+<!-- Scanic CDN -->
+<script src="https://unpkg.com/scanic/dist/scanic.js"></script>
+<script>
+(() => {
+  "use strict";
+  const $ = (s) => document.querySelector(s);
+  const logEl = $("#log");
+  const canvasBox = $("#canvasBox");
+  const placeholder = $("#placeholder");
+  const libStatus = $("#libStatus");
+  const stats = $("#stats");
+
+  let currentImage = null;
+
+  function log(msg, cls = "info") {
+    const time = new Date().toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    logEl.innerHTML += `\n<span class="${cls}">[${time}] ${msg}</span>`;
+    logEl.scrollTop = logEl.scrollHeight;
+    console.log(`[test-scanic] ${msg}`);
+  }
+
+  function setLibStatus(ok, text) {
+    libStatus.textContent = ok ? "✅ " + text : "⚠️ " + text;
+    libStatus.style.color = ok ? "var(--laser)" : "#ff7b7e";
+    libStatus.style.background = ok ? "rgba(200,255,46,.12)" : "rgba(255,90,95,.12)";
+    libStatus.style.borderColor = ok ? "rgba(200,255,46,.35)" : "rgba(255,90,95,.4)";
+  }
+
+  // Detectar si la librería cargó (Scanic puede tardar en exponer el global)
+  (function waitForScanic() {
+    let tries = 0;
+    const check = setInterval(() => {
+      tries++;
+      if (typeof window.scanic !== "undefined" && window.scanic) {
+        clearInterval(check);
+        setLibStatus(true, "Scanic cargado");
+        log("Scanic disponible. Métodos: " + Object.keys(window.scanic).join(", "), "ok");
+        return;
+      }
+      if (tries > 100) {
+        clearInterval(check);
+        setLibStatus(false, "Scanic no cargó");
+        log("ERROR: scanic no se expuso en window después de 10s", "err");
+      }
+    }, 100);
+  })();
+
+  // Cargar imagen
+  $("#fileInput").addEventListener("change", (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    log("Archivo seleccionado: " + f.name + " (" + (f.size / 1024).toFixed(0) + " KB)");
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        currentImage = img;
+        placeholder.style.display = "none";
+        canvasBox.innerHTML = "";
+        const c = document.createElement("canvas");
+        c.width = img.naturalWidth;
+        c.height = img.naturalHeight;
+        c.getContext("2d").drawImage(img, 0, 0);
+        canvasBox.appendChild(c);
+        $("#btnDetect").disabled = false;
+        $("#btnExtract").disabled = false;
+        log("Imagen cargada: " + img.naturalWidth + "×" + img.naturalHeight, "ok");
+      };
+      img.onerror = () => log("ERROR: no se pudo cargar la imagen", "err");
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(f);
+    e.target.value = "";
+  });
+
+  // Detectar esquinas
+  $("#btnDetect").addEventListener("click", async () => {
+    if (!currentImage) return;
+    const btn = $("#btnDetect");
+    btn.disabled = true;
+    const old = btn.innerHTML;
+    btn.innerHTML = "⏳ Detectando…";
+    log("Llamando a scanic.scanDocument()…");
+    const t0 = performance.now();
+    try {
+      const result = await window.scanic.scanDocument(currentImage);
+      const ms = Math.round(performance.now() - t0);
+      log("Respuesta en " + ms + "ms", "info");
+      log("Resultado completo: " + JSON.stringify(result, null, 2));
+      if (result && result.success) {
+        log("✅ Documento detectado", "ok");
+        log("Esquinas: " + JSON.stringify(result.corners));
+        stats.style.display = "flex";
+        $("#statStatus").textContent = "Detectado";
+        $("#statConfidence").textContent = result.confidence != null ? result.confidence : "—";
+        $("#statTime").textContent = ms + "ms";
+        drawCorners(result.corners);
+      } else {
+        log("❌ No se detectó documento: " + (result && result.message ? result.message : "sin mensaje"), "err");
+        $("#statStatus").textContent = "Sin detección";
+        $("#statTime").textContent = ms + "ms";
+      }
+    } catch (e) {
+      log("ERROR: " + e.message, "err");
+      console.error(e);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = old;
+    }
+  });
+
+  // Extraer documento
+  $("#btnExtract").addEventListener("click", async () => {
+    if (!currentImage) return;
+    const btn = $("#btnExtract");
+    btn.disabled = true;
+    const old = btn.innerHTML;
+    btn.innerHTML = "⏳ Extrayendo…";
+    log("Llamando a scanic.scanDocument({ mode: 'extract' })…");
+    const t0 = performance.now();
+    try {
+      const result = await window.scanic.scanDocument(currentImage, { mode: "extract" });
+      const ms = Math.round(performance.now() - t0);
+      log("Respuesta en " + ms + "ms", "info");
+      if (result && result.success && result.output) {
+        log("✅ Documento extraído", "ok");
+        canvasBox.innerHTML = "";
+        canvasBox.appendChild(result.output);
+        stats.style.display = "flex";
+        $("#statStatus").textContent = "Extraído";
+        $("#statTime").textContent = ms + "ms";
+      } else {
+        log("❌ No se pudo extraer: " + (result && result.message ? result.message : "sin mensaje"), "err");
+      }
+    } catch (e) {
+      log("ERROR: " + e.message, "err");
+      console.error(e);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = old;
+    }
+  });
+
+  function drawCorners(corners) {
+    if (!corners) return;
+    const pts = Array.isArray(corners) ? corners : [
+      corners.topLeft, corners.topRight, corners.bottomRight, corners.bottomLeft
+    ];
+    const c = document.createElement("canvas");
+    c.width = currentImage.naturalWidth;
+    c.height = currentImage.naturalHeight;
+    const ctx = c.getContext("2d");
+    ctx.drawImage(currentImage, 0, 0);
+    ctx.strokeStyle = "#C8FF2E";
+    ctx.lineWidth = Math.max(3, c.width * 0.004);
+    ctx.beginPath();
+    const norm = (p) => ({
+      x: Array.isArray(p) ? p[0] : p.x,
+      y: Array.isArray(p) ? p[1] : p.y,
+    });
+    const n = pts.map(norm);
+    ctx.moveTo(n[0].x * c.width, n[0].y * c.height);
+    for (let i = 1; i < n.length; i++) {
+      ctx.lineTo(n[i].x * c.width, n[i].y * c.height);
+    }
+    ctx.closePath();
+    ctx.stroke();
+    // Dibujar círculos en cada esquina
+    n.forEach((p, i) => {
+      ctx.fillStyle = "#C8FF2E";
+      ctx.beginPath();
+      ctx.arc(p.x * c.width, p.y * c.height, Math.max(8, c.width * 0.012), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#0B0B12";
+      ctx.font = "bold " + Math.max(12, c.width * 0.02) + "px sans-serif";
+      ctx.fillText(String(i + 1), p.x * c.width + 12, p.y * c.height + 12);
+    });
+    canvasBox.innerHTML = "";
+    canvasBox.appendChild(c);
+    log("Esquinas dibujadas en el canvas", "ok");
+  }
+})();
+</script>
+</body>
+</html>
