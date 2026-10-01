@@ -55,8 +55,7 @@ export function applyFilterToCanvas(srcCanvas, filterId) {
         v = v < 128 ? v * 0.82 : 255 - (255 - v) * 0.82;
         d[i] = d[i+1] = d[i+2] = v;
       }
-    }
-  } else if (filterId === "auto") {
+    } else if (filterId === "auto") {
     for (let i = 0; i < d.length; i += 4) {
       let r = (d[i]   - 128) * 1.35 + 142;
       let g = (d[i+1] - 128) * 1.35 + 142;
