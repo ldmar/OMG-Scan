@@ -36,6 +36,7 @@ import { initInstall } from "./features/install.js";
 import { makePDFFromPages, downloadPDF, sharePDF } from "./features/pdf.js";
 import { straightenCanvas } from "./pipeline/straighten.js";
 import { flatFieldCorrect } from "./pipeline/flat-field.js";
+import { autoLevels } from "./pipeline/auto-levels.js";
 import { on, emit } from "./events.js";
 
 /* =========================================================
@@ -57,6 +58,11 @@ async function goToFilters() {
     btn.innerHTML = `<span class="spinner"></span> Corrigiendo iluminación…`;
     await new Promise((r) => setTimeout(r, 20));
     canvas = flatFieldCorrect(canvas, { strength: 0.75 });
+
+    // Auto-levels (recupera contraste del texto)
+    btn.innerHTML = `<span class="spinner"></span> Ajustando contraste…`;
+    await new Promise((r) => setTimeout(r, 20));
+    canvas = autoLevels(canvas);
     
     if (state.autoStraighten) {
       btn.innerHTML = `<span class="spinner"></span> Enderezando…`;
