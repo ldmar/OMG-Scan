@@ -172,20 +172,20 @@ export function scoreQuadWithContent(canvas, corners, confidence) {
   const interior = sampleInterior(canvas, corners);
   if (!interior) return { score: base, reason: "no-samples" };
 
-  // Papel esperado: median >= 140, std moderada, mayoría claro
+  // ---- Gates duros: rechazo inmediato sin importar geometría ----
+  if (interior.median < 110)       return { score: 0, reason: "interior-oscuro", interior };
+  if (interior.darkRatio > 0.35)   return { score: 0, reason: "interior-texturado", interior };
+  if (interior.brightRatio < 0.25) return { score: 0, reason: "poco-papel", interior };
+  if (interior.std > 80)           return { score: 0, reason: "interior-mixto", interior };
+
+  // ---- Scoring suave para casos límite ----
   const paperScore =
     Math.min(1, interior.median / 170) * 0.5 +
     Math.min(1, interior.brightRatio / 0.4) * 0.3 +
     Math.max(0, 1 - interior.darkRatio / 0.35) * 0.2;
 
   const score = base * 0.6 + paperScore * 0.4;
-
-  let reason = "ok";
-  if (interior.median < 100)       reason = "interior-oscuro";
-  else if (interior.darkRatio > 0.45) reason = "interior-texturado";
-  else if (interior.brightRatio < 0.2) reason = "poco-papel";
-
-  return { score, reason, interior };
+  return { score, reason: "ok", interior };
 }
 
 /* --------- EMA SOBRE HISTORIAL DE ESQUINAS --------- */
