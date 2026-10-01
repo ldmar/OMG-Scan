@@ -5,6 +5,7 @@ import { state, prefs } from "../state.js";
 import { showToast } from "../ui.js";
 import { buzz } from "../utils.js";
 import { on } from "../events.js";
+import { scoreQuad } from "../pipeline/quad-validate.js";
 
 const video              = $("#video");
 const liveOverlay        = $("#liveOverlay");
@@ -99,6 +100,22 @@ async function runLiveDetectionOnce() {
         { x: bottomRight.x / liveCanvas.width, y: bottomRight.y / liveCanvas.height },
         { x: bottomLeft.x / liveCanvas.width,  y: bottomLeft.y / liveCanvas.height  },
       ];
+      // Scoring rápido sobre normalizado (sin análisis de píxeles para no ralentizar)
+      const quickScore = scoreQuad(n, typeof result.confidence === "number" ? result.confidence : 0.7);
+
+      // Si el score es muy bajo, tratá como si no hubiera detección
+      if (quickScore < 0.3) {
+        state.liveSuccessStreak = 0;
+        livePoly.setAttribute("points", "");
+        liveBadge.classList.remove("show", "stable");
+        liveOverlay.classList.remove("stable");
+        cancelAutoShutter();
+        return;
+      }
+
+      // Score medio: mostrá polígono pero no permitas auto-shutter
+      const allowAutoShutter = quickScore >= 0.55;
+      
       state.liveCornersHistory.push(n);
       if (state.liveCornersHistory.length > 5) state.liveCornersHistory.shift();
       state.liveSuccessStreak++;
@@ -117,14 +134,14 @@ async function runLiveDetectionOnce() {
       const stable    = areCornersStable(state.liveCornersHistory);
       const confident = conf >= 0.7;
 
-      if (confident && stable) {
+      if (confident && stable && allowAutoShutter) {
         liveBadge.classList.add("show", "stable");
         liveBadge.textContent = "✓ Encuadrado · ¡capturando!";
         liveOverlay.classList.add("stable");
         if (state.autoShutter && state.autoShutterEnabled && !state.autoShutterCountdown) {
           startAutoShutterCountdown();
         }
-      } else if (confident) {
+      } else if (confident && allowAutoShutter) {
         liveBadge.classList.add("show");
         liveBadge.classList.remove("stable");
         liveBadge.textContent = `Documento detectado ✓ ${Math.round(conf * 100)}%`;

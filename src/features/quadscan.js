@@ -8,6 +8,7 @@ import {
 } from "../ui.js";
 import { LibraryLoader } from "../loader.js";
 import { emit, on } from "../events.js";
+import { isValidQuad, scoreQuadWithContent } from "../pipeline/quad-validate.js";
 
 const QUADSCAN_URL = "https://cdn.jsdelivr.net/npm/quadscan/dist/quadscan.iife.js";
 
@@ -126,21 +127,48 @@ export async function autoDetectEdges() {
     const h = cropImg.naturalHeight;
     const { topLeft, topRight, bottomRight, bottomLeft } = result.corners;
     const pad = 0.003;
-    state.crop.corners = [
+    const newCorners = [
       { x: clamp(topLeft.x / w - pad, 0, 1),     y: clamp(topLeft.y / h - pad, 0, 1)     },
       { x: clamp(topRight.x / w + pad, 0, 1),    y: clamp(topRight.y / h - pad, 0, 1)    },
       { x: clamp(bottomRight.x / w + pad, 0, 1), y: clamp(bottomRight.y / h + pad, 0, 1) },
       { x: clamp(bottomLeft.x / w - pad, 0, 1),  y: clamp(bottomLeft.y / h + pad, 0, 1)  },
     ];
+
+    // Validación geométrica dura
+    if (!isValidQuad(newCorners)) {
+      showToast("No pude encuadrar bien. Ajustá a mano.", 2200);
+      buzz(30);
+      return;
+    }
+
+    // Scoring con análisis de contenido
+    const { score, reason, interior } = scoreQuadWithContent(cropImg, newCorners, result.confidence);
+
+    if (score < 0.35) {
+      // Muy baja calidad — no aplicar
+      showToast("Detección dudosa. Ajustá las esquinas.", 2200);
+      buzz(30);
+      return;
+    }
+
+    state.crop.corners = newCorners;
     state.crop.zoom = 1; state.crop.panX = 0; state.crop.panY = 0;
     emit("crop:refit");
     emit("crop:redraw");
     buzz(20);
+
     const conf = typeof result.confidence === "number"
       ? Math.round(result.confidence * 100) : null;
-    showToast(conf != null
-      ? `Bordes detectados ✨ ${conf}% · ${ms}ms`
-      : `Bordes detectados ✨ ${ms}ms`);
+    const pct  = Math.round(score * 100);
+
+    if (score >= 0.7) {
+      showToast(conf != null
+        ? `Bordes detectados ✨ ${conf}% · ${ms}ms`
+        : `Bordes detectados ✨ ${ms}ms`);
+    } else {
+      // Score medio: aplica pero avisa
+      showToast(`Encuadre aproximado (${pct}%). Revisá las esquinas.`, 2400);
+    }
   } catch (e) {
     console.error("[autoDetect]", e);
     showToast("Error al detectar: " + (e.message || "desconocido"));
