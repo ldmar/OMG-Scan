@@ -20,11 +20,41 @@ export function applyFilterToCanvas(srcCanvas, filterId) {
       v = v < 70 ? 0 : v > 195 ? 255 : v;
       d[i] = d[i+1] = d[i+2] = v;
     }
-  } else if (filterId === "gray") {
-    for (let i = 0; i < d.length; i += 4) {
-      let v = d[i] * 0.299 + d[i+1] * 0.587 + d[i+2] * 0.114;
-      v = (v - 128) * 1.35 + 140;
-      d[i] = d[i+1] = d[i+2] = Math.max(0, Math.min(255, v));
+    } else if (filterId === "gray") {
+      // 1. Grayscale + histograma
+      const lum = new Uint8Array(d.length / 4);
+      const hist = new Uint32Array(256);
+      for (let i = 0, j = 0; i < d.length; i += 4, j++) {
+        const L = (d[i] * 0.299 + d[i+1] * 0.587 + d[i+2] * 0.114) | 0;
+        lum[j] = L;
+        hist[L]++;
+      }
+      const total = lum.length;
+
+      // 2. Percentiles 2% y 98%
+      let acc = 0, lo = 0, hi = 255;
+      for (let v = 0; v < 256; v++) {
+        acc += hist[v];
+        if (acc >= total * 0.02) { lo = v; break; }
+      }
+      acc = 0;
+      for (let v = 0; v < 256; v++) {
+        acc += hist[v];
+        if (acc >= total * 0.98) { hi = v; break; }
+      }
+      if (hi - lo < 20) { lo = 0; hi = 255; }
+
+      // 3. Stretch + S-curve suave
+      const range = hi - lo;
+      const scale = 255 / range;
+      for (let i = 0, j = 0; i < d.length; i += 4, j++) {
+        let v = (lum[j] - lo) * scale;
+        if (v < 0) v = 0;
+        else if (v > 255) v = 255;
+        // S-curve: oscurece negros, aclara blancos
+        v = v < 128 ? v * 0.82 : 255 - (255 - v) * 0.82;
+        d[i] = d[i+1] = d[i+2] = v;
+      }
     }
   } else if (filterId === "auto") {
     for (let i = 0; i < d.length; i += 4) {
