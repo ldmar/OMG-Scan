@@ -1,0 +1,35 @@
+/
+├── index.html              (queda: HTML + CSS + <script type="module" src="./src/main.js">)
+├── manifest.json
+├── sw.js
+├── icons/
+└── src/
+    ├── main.js             ← boot + wire de todos los eventos + routing
+    ├── state.js            ← state, prefs, FILTERS, DEFAULT_CORNERS, MAX_DIM
+    ├── utils.js            ← $, $$, showToast, buzz, uuid, clamp, dist, formatters, blob helpers
+    ├── ui.js               ← show(view), modales, sheet, toast, libOverlay, preloadChip
+    ├── db.js               ← IndexedDB (openDB, dbPut, dbGet, dbGetAll, dbDelete, dbCount)
+    ├── loader.js           ← LibraryLoader (ya está bien encapsulado, solo mover)
+    │
+    ├── pipeline/           ← procesamiento de imagen puro (sin DOM)
+    │   ├── homography.js   ← solveLinearSystem, computeHomography, isNearlyAxisRect
+    │   ├── warp.js         ← warpWorker, warpPerspectiveAsync
+    │   ├── straighten.js   ← detectSkewAngle, straightenCanvas
+    │   ├── quad-validate.js← NUEVO: validación geométrica + EMA + score combinado
+    │   ├── flat-field.js   ← NUEVO: corrección de iluminación
+    │   ├── filters.js      ← applyFilterToCanvas, brush (paintDot, replayStrokes, applyShadowBrush)
+    │   └── ocr-preprocess.js ← preprocessForOCR, prepareForOCR
+    │
+    ├── features/
+    │   ├── camera.js       ← startCamera, stopCamera, capture, toggleFlash, quality loop
+    │   ├── live-detect.js  ← detección en vivo + auto-shutter countdown
+    │   ├── quadscan.js     ← loadQuadscan, autoDetectEdges, preloadQuadscan
+    │   ├── crop.js         ← crop view: corners, gestos, lupa, rotación
+    │   ├── filters-view.js ← filters view: render, rail, brush UI, compare
+    │   ├── ocr.js          ← runOCR, getOCRWorker, ensureTesseract
+    │   ├── pdf.js          ← makePDFFromPages, sharePDF, downloadPDF
+    │   ├── library.js      ← renderLibrary, openDoc, saveCurrentToLibrary, docActions
+    │   └── install.js      ← PWA install chip + beforeinstallprompt
+    │
+    └── css/
+        └── app.css         ← (opcional, fase 2) extraer el <style> del HTML
