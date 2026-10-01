@@ -92,6 +92,22 @@ export function updateAutoDetectBtn() {
   }
 }
 
+function expandQuad(corners, pctOfSize, minMargin) {
+  const cx = (corners[0].x + corners[1].x + corners[2].x + corners[3].x) / 4;
+  const cy = (corners[0].y + corners[1].y + corners[2].y + corners[3].y) / 4;
+  return corners.map((p) => {
+    const sdx = Math.sign(p.x - cx) || 1;
+    const sdy = Math.sign(p.y - cy) || 1;
+    const dxRel = Math.abs(p.x - cx) * pctOfSize;
+    const dyRel = Math.abs(p.y - cy) * pctOfSize;
+    const dx = Math.max(dxRel, minMargin) * sdx;
+    const dy = Math.max(dyRel, minMargin) * sdy;
+    return {
+      x: clamp(p.x + dx, 0, 1),
+      y: clamp(p.y + dy, 0, 1),
+    };
+  });
+}
 export async function autoDetectEdges() {
   const cropImg = $("#cropImg");
   if (!cropImg.complete || !cropImg.naturalWidth) {
@@ -126,13 +142,16 @@ export async function autoDetectEdges() {
     const w = cropImg.naturalWidth;
     const h = cropImg.naturalHeight;
     const { topLeft, topRight, bottomRight, bottomLeft } = result.corners;
-    const pad = 0.003;
-    const newCorners = [
+    const pad = 0.005;
+    let newCorners = [
       { x: clamp(topLeft.x / w - pad, 0, 1),     y: clamp(topLeft.y / h - pad, 0, 1)     },
       { x: clamp(topRight.x / w + pad, 0, 1),    y: clamp(topRight.y / h - pad, 0, 1)    },
       { x: clamp(bottomRight.x / w + pad, 0, 1), y: clamp(bottomRight.y / h + pad, 0, 1) },
       { x: clamp(bottomLeft.x / w - pad, 0, 1),  y: clamp(bottomLeft.y / h + pad, 0, 1)  },
     ];
+    // Expandir 2.5% hacia afuera del centro, para no cortar márgenes del papel
+    newCorners = expandQuad(newCorners, 0.05, 0.045);
+    // cual quier cosa subirlo a expandQuad(newCorners, 0.07, 0.06)
 
     // Validación geométrica dura
     if (!isValidQuad(newCorners)) {
@@ -145,12 +164,15 @@ export async function autoDetectEdges() {
     const { score, reason, interior } = scoreQuadWithContent(cropImg, newCorners, result.confidence);
 
     if (score < 0.35) {
-      // Muy baja calidad — no aplicar
-      showToast("Detección dudosa. Ajustá las esquinas.", 2200);
+      const msg = reason === "interior-texturado" || reason === "interior-mixto"
+        ? "Mucho fondo alrededor. Acercate al doc o ajustá a mano."
+        : reason === "interior-oscuro" || reason === "poco-papel"
+        ? "Poca luz o poco papel. Mejorá la iluminación."
+        : "Detección dudosa. Ajustá las esquinas.";
+      showToast(msg, 2400);
       buzz(30);
       return;
     }
-
     state.crop.corners = newCorners;
     state.crop.zoom = 1; state.crop.panX = 0; state.crop.panY = 0;
     emit("crop:refit");
