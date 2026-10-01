@@ -78,9 +78,15 @@ export function detectSkewAngle(canvas) {
     return mean > 1e-6 ? peak / mean : 0;
   }
 
-  // ---- Barrido de ángulos + score de referencia a 0° ----
+  // ---- Barrido grueso ±15° ----
   let bestAngle = 0, bestRatio = 0;
-  for (let a = -6; a <= 6; a += 0.25) {
+  for (let a = -15; a <= 15; a += 0.5) {
+    const r = scoreAt(a);
+    if (r > bestRatio) { bestRatio = r; bestAngle = a; }
+  }
+  // ---- Refinamiento fino ±0.5° del ganador ----
+  const coarse = bestAngle;
+  for (let a = coarse - 0.5; a <= coarse + 0.5; a += 0.1) {
     const r = scoreAt(a);
     if (r > bestRatio) { bestRatio = r; bestAngle = a; }
   }
@@ -90,7 +96,7 @@ export function detectSkewAngle(canvas) {
   // 1. Sin pico claro en ningún ángulo → imagen sin estructura legible.
   if (bestRatio < 1.25) return 0;
   // 2. El mejor ángulo no supera a "derecho" por margen suficiente.
-  if (bestRatio < zeroRatio * 1.15) return 0;
+  if (bestRatio < zeroRatio * 1.10) return 0;
 
   return bestAngle;
 }
