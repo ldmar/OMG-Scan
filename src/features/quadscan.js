@@ -8,7 +8,7 @@ import {
 } from "../ui.js";
 import { LibraryLoader } from "../loader.js";
 import { emit, on } from "../events.js";
-import { isValidQuad, scoreQuadWithContent } from "../pipeline/quad-validate.js";
+import { isValidQuad, scoreQuadWithContent, elementToCanvas } from "../pipeline/quad-validate.js";
 
 const QUADSCAN_URL = "https://cdn.jsdelivr.net/npm/quadscan/dist/quadscan.iife.js";
 
@@ -161,7 +161,13 @@ export async function autoDetectEdges() {
     }
 
     // Scoring con análisis de contenido
-    const { score, reason, interior } = scoreQuadWithContent(cropImg, newCorners, result.confidence);
+    // cropImg es un <img>, así que primero lo convertimos a canvas downsampleado
+    const tmpCanvas = elementToCanvas(cropImg, 800);
+    if (!tmpCanvas) {
+      showToast("Error procesando la imagen. Probá de nuevo.", 2200);
+      return;
+    }
+    const { score, reason } = scoreQuadWithContent(tmpCanvas, newCorners, result.confidence);
 
     if (score < 0.35) {
       const msg = reason === "interior-texturado" || reason === "interior-mixto"
