@@ -94,17 +94,32 @@ export function scoreQuad(corners, confidence) {
   return conf * 0.35 + areaScore * 0.25 + angleScore * 0.25 + aspectScore * 0.15;
 }
 
-/* --------- ANÁLISIS DE CONTENIDO INTERIOR ---------
-   Samplea una grilla dentro del quad y mide:
-   - luminancia mediana (papel es claro)
-   - ratio de píxeles oscuros (texto/fondo texturado)
-   Devuelve métricas que el caller combina con scoreQuad. */
+/* --------- HELPER: convierte <img> o <canvas> a canvas real --------- */
+
+export function elementToCanvas(el, maxW = 800) {
+  const nw = el.naturalWidth || el.width;
+  const nh = el.naturalHeight || el.height;
+  if (!nw || !nh) return null;
+  const scale = Math.min(1, maxW / Math.max(nw, nh));
+  const w = Math.round(nw * scale);
+  const h = Math.round(nh * scale);
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  c.getContext("2d", { willReadFrequently: true }).drawImage(el, 0, 0, w, h);
+  return c;
+}
+
+/* --------- ANÁLISIS DE CONTENIDO INTERIOR --------- */
 
 export function sampleInterior(canvas, corners, gridN = 8) {
-  const { width: cw, height: ch } = canvas;
+  const cw = canvas.width;
+  const ch = canvas.height;
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
 
-  // Bbox del quad para limitar muestreo
+  // Un solo getImageData de todo el canvas (rápido)
+  const imgData = ctx.getImageData(0, 0, cw, ch).data;
+
+  // Bbox del quad
   const xs = corners.map((p) => p.x * cw);
   const ys = corners.map((p) => p.y * ch);
   const bx0 = Math.max(0, Math.floor(Math.min(...xs)));
@@ -114,10 +129,10 @@ export function sampleInterior(canvas, corners, gridN = 8) {
   const bw = bx1 - bx0, bh = by1 - by0;
   if (bw < 4 || bh < 4) return null;
 
-  // Point-in-polygon test para filtrar samples dentro del quad
+  // Point-in-quad test
+  const qx = corners.map((p) => p.x * cw);
+  const qy = corners.map((p) => p.y * ch);
   function pointInQuad(px, py) {
-    const qx = corners.map((p) => p.x * cw);
-    const qy = corners.map((p) => p.y * ch);
     let inside = false;
     for (let i = 0, j = 3; i < 4; j = i++) {
       const xi = qx[i], yi = qy[i], xj = qx[j], yj = qy[j];
@@ -128,14 +143,17 @@ export function sampleInterior(canvas, corners, gridN = 8) {
     return inside;
   }
 
+  // Muestrear desde el buffer (sin más getImageData)
   const samples = [];
   for (let gy = 0; gy < gridN; gy++) {
     for (let gx = 0; gx < gridN; gx++) {
       const px = bx0 + ((gx + 0.5) / gridN) * bw;
       const py = by0 + ((gy + 0.5) / gridN) * bh;
       if (!pointInQuad(px, py)) continue;
-      const p = ctx.getImageData(Math.floor(px), Math.floor(py), 1, 1).data;
-      const L = 0.299 * p[0] + 0.587 * p[1] + 0.114 * p[2];
+      const xi = Math.floor(px);
+      const yi = Math.floor(py);
+      const i4 = (yi * cw + xi) * 4;
+      const L = 0.299 * imgData[i4] + 0.587 * imgData[i4+1] + 0.114 * imgData[i4+2];
       samples.push(L);
     }
   }
@@ -170,15 +188,14 @@ export function sampleInterior(canvas, corners, gridN = 8) {
 export function scoreQuadWithContent(canvas, corners, confidence) {
   const base = scoreQuad(corners, confidence);
   const interior = sampleInterior(canvas, corners);
-  if (!interior) return { score: base, reason: "no-samples" };
+  if (!interior) return { score: 0, reason: "no-samples" };
 
-  // ---- Gates duros: rechazo inmediato sin importar geometría ----
+  // Gates duros
   if (interior.median < 110)       return { score: 0, reason: "interior-oscuro", interior };
   if (interior.darkRatio > 0.35)   return { score: 0, reason: "interior-texturado", interior };
   if (interior.brightRatio < 0.25) return { score: 0, reason: "poco-papel", interior };
   if (interior.std > 80)           return { score: 0, reason: "interior-mixto", interior };
 
-  // ---- Scoring suave para casos límite ----
   const paperScore =
     Math.min(1, interior.median / 170) * 0.5 +
     Math.min(1, interior.brightRatio / 0.4) * 0.3 +
